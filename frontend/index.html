@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IntegrityAI Console</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<script src="vendor/chart.umd.js"></script>
+<style>
+  :root {
+    --bg: #12161A;
+    --panel: #1B2127;
+    --panel-raised: #212831;
+    --border: #2A323A;
+    --text: #E7EBEF;
+    --text-muted: #8A94A0;
+    --text-dim: #5C6670;
+    --accent: #4C8DFF;
+    --accent-dim: #2C4B82;
+    --critical: #E5484D;
+    --critical-bg: #3A1F21;
+    --elevated: #E8A33D;
+    --elevated-bg: #3A2E19;
+    --normal: #3FA66E;
+    --normal-bg: #1B3327;
+    --radius: 4px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: 'IBM Plex Sans', system-ui, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+  .mono { font-family: 'IBM Plex Mono', monospace; }
+  button { font-family: inherit; cursor: pointer; }
+  a { color: var(--accent); }
+
+  /* ---------- Login ---------- */
+  #login-view {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background:
+      radial-gradient(circle at 20% 20%, rgba(76,141,255,0.08), transparent 40%),
+      var(--bg);
+  }
+  .login-card {
+    width: 380px;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 36px 32px;
+  }
+  .login-brand {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 4px;
+  }
+  .login-brand .mark {
+    width: 28px; height: 28px;
+    background: var(--accent);
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 14px; color: #fff;
+  }
+  .login-brand .name { font-size: 17px; font-weight: 600; letter-spacing: 0.2px; }
+  .login-sub { color: var(--text-muted); font-size: 13px; margin-bottom: 28px; }
+  .field { margin-bottom: 16px; }
+  .field label {
+    display: block;
+    font-size: 12px;
+    color: var(--text-muted);
+    margin-bottom: 6px;
+  }
+  .field input {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 10px 12px;
+    color: var(--text);
+    font-size: 14px;
+    font-family: 'IBM Plex Mono', monospace;
+  }
+  .field input:focus { outline: none; border-color: var(--accent); }
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: var(--radius);
+    padding: 10px 18px;
+    font-size: 14px;
+    font-weight: 600;
+    width: 100%;
+  }
+  .btn:hover { background: #3d7ae8; }
+  .btn-ghost {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+  }
+  .btn-ghost:hover { border-color: var(--text-dim); }
+  .btn-sm { padding: 6px 12px; font-size: 12.5px; width: auto; }
+  #login-error {
+    color: var(--critical);
+    font-size: 13px;
+    margin-top: 14px;
+    display: none;
+  }
+  .demo-creds {
+    margin-top: 22px;
+    padding-top: 18px;
+    border-top: 1px solid var(--border);
+    font-size: 12px;
+    color: var(--text-dim);
+  }
+  .demo-creds div { margin-bottom: 3px; }
+
+  /* ---------- App shell ---------- */
+  #app-view { display: none; min-height: 100vh; }
+  .shell { display: flex; min-height: 100vh; }
+  .sidebar {
+    width: 220px;
+    background: var(--panel);
+    border-right: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    flex-shrink: 0;
+  }
+  .sidebar-brand {
+    padding: 20px 18px;
+    display: flex; align-items: center; gap: 10px;
+    border-bottom: 1px solid var(--border);
+  }
+  .sidebar-brand .mark {
+    width: 26px; height: 26px;
+    background: var(--accent);
+    border-radius: 3px;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 13px; color: #fff;
+  }
+  .sidebar-brand .name { font-size: 15px; font-weight: 600; }
+  .nav { padding: 14px 10px; flex: 1; }
+  .nav-item {
+    display: flex; align-items: center; gap: 10px;
+    padding: 9px 12px;
+    border-radius: var(--radius);
+    color: var(--text-muted);
+    font-size: 13.5px;
+    font-weight: 500;
+    cursor: pointer;
+    margin-bottom: 2px;
+  }
+  .nav-item:hover { background: var(--panel-raised); color: var(--text); }
+  .nav-item.active { background: var(--accent-dim); color: #fff; }
+  .nav-item .dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor; opacity: 0.6; }
+  .sidebar-user {
+    padding: 14px 18px;
+    border-top: 1px solid var(--border);
+  }
+  .sidebar-user .name { font-size: 13.5px; font-weight: 600; }
+  .sidebar-user .role {
+    font-size: 11.5px;
+    color: var(--text-muted);
+    text-transform: capitalize;
+    margin-top: 1px;
+  }
+  .sidebar-user .region { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .sidebar-user button {
+    margin-top: 10px;
+    background: none; border: none;
+    color: var(--text-dim);
+    font-size: 12px;
+    padding: 0;
+    text-decoration: underline;
+  }
+  .sidebar-user button:hover { color: var(--text); }
+
+  .main { flex: 1; min-width: 0; padding: 28px 34px; }
+  .page-header { margin-bottom: 22px; }
+  .page-title { font-size: 20px; font-weight: 600; }
+  .page-sub { color: var(--text-muted); font-size: 13px; margin-top: 3px; }
+
+  /* ---------- Stat strip ---------- */
+  .stat-row { display: flex; gap: 14px; margin-bottom: 24px; }
+  .stat-tile {
+    flex: 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px 18px;
+  }
+  .stat-tile .label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+  .stat-tile .value { font-size: 26px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; }
+  .stat-tile.critical .value { color: var(--critical); }
+  .stat-tile.elevated .value { color: var(--elevated); }
+  .stat-tile.normal .value { color: var(--normal); }
+
+  /* ---------- Filter bar ---------- */
+  .filter-bar { display: flex; gap: 8px; margin-bottom: 14px; align-items: center; }
+  .filter-btn {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 7px 14px;
+    border-radius: var(--radius);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .filter-btn.active { background: var(--panel-raised); border-color: var(--accent); color: var(--text); }
+  .filter-bar .spacer { flex: 1; }
+
+  /* ---------- Table ---------- */
+  .panel { background: var(--panel); border: 1px solid var(--border); border-radius: var(--radius); overflow: hidden; }
+  .table-scroll { max-height: 560px; overflow-y: auto; }
+  table { width: 100%; border-collapse: collapse; }
+  thead { position: sticky; top: 0; background: var(--panel); z-index: 1; }
+  th {
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: var(--text-dim);
+    padding: 10px 16px;
+    border-bottom: 1px solid var(--border);
+    font-weight: 600;
+  }
+  td { padding: 12px 16px; border-bottom: 1px solid var(--border); font-size: 13.5px; }
+  tr:last-child td { border-bottom: none; }
+  tr.row-clickable:hover { background: var(--panel-raised); cursor: pointer; }
+  .seg-id { font-family: 'IBM Plex Mono', monospace; color: var(--text); }
+  .badge {
+    display: inline-block;
+    padding: 3px 9px;
+    border-radius: 3px;
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.critical { background: var(--critical-bg); color: var(--critical); }
+  .badge.elevated { background: var(--elevated-bg); color: var(--elevated); }
+  .badge.normal { background: var(--normal-bg); color: var(--normal); }
+  .ack-tag { font-size: 11.5px; color: var(--text-dim); }
+  .empty-state { padding: 40px 16px; text-align: center; color: var(--text-muted); font-size: 13.5px; }
+
+  /* ---------- Slide-over ---------- */
+  #overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 50;
+  }
+  #detail-panel {
+    position: fixed; top: 0; right: 0; bottom: 0;
+    width: 460px;
+    background: var(--panel);
+    border-left: 1px solid var(--border);
+    padding: 26px 28px;
+    overflow-y: auto;
+    z-index: 51;
+  }
+  #detail-panel .close-btn {
+    position: absolute; top: 22px; right: 24px;
+    background: none; border: none; color: var(--text-muted); font-size: 20px;
+  }
+  #detail-panel h2 { font-size: 17px; font-weight: 600; font-family: 'IBM Plex Mono', monospace; margin-bottom: 4px; }
+  #detail-panel .region-line { color: var(--text-muted); font-size: 13px; margin-bottom: 18px; }
+  .detail-section { margin-bottom: 22px; }
+  .detail-section h3 {
+    font-size: 11px; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--text-dim); margin-bottom: 10px; font-weight: 600;
+  }
+  .attr-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 16px; }
+  .attr-grid .k { font-size: 11.5px; color: var(--text-muted); }
+  .attr-grid .v { font-size: 13px; font-family: 'IBM Plex Mono', monospace; margin-top: 1px; }
+  .shap-row { margin-bottom: 10px; }
+  .shap-label { display: flex; justify-content: space-between; font-size: 12.5px; margin-bottom: 4px; }
+  .shap-label .feat { color: var(--text); font-family: 'IBM Plex Mono', monospace; }
+  .shap-label .impact { font-family: 'IBM Plex Mono', monospace; }
+  .shap-bar-track { height: 8px; background: var(--bg); border-radius: 2px; position: relative; overflow: hidden; }
+  .shap-bar-fill { height: 100%; position: absolute; top: 0; }
+  .shap-bar-fill.pos { background: var(--critical); left: 50%; }
+  .shap-bar-fill.neg { background: var(--normal); right: 50%; }
+  .center-tick { position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--border); }
+  .rec-box {
+    background: var(--panel-raised);
+    border-left: 3px solid var(--elevated);
+    padding: 12px 14px;
+    font-size: 13px;
+    border-radius: 3px;
+    color: var(--text);
+    line-height: 1.6;
+  }
+
+  /* ---------- Fleet overview ---------- */
+  .fleet-grid { display: grid; grid-template-columns: 1.3fr 1fr; gap: 18px; margin-bottom: 20px; }
+  .card-title { font-size: 13px; font-weight: 600; margin-bottom: 14px; }
+  .region-row { display: flex; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .region-row:last-child { border-bottom: none; }
+  .region-row .rate { font-family: 'IBM Plex Mono', monospace; color: var(--text-muted); }
+
+  .hidden { display: none !important; }
+</style>
+</head>
+<body>
+
+  <!-- ===================== LOGIN ===================== -->
+  <div id="login-view">
+    <div class="login-card">
+      <div class="login-brand"><div class="mark">IA</div><div class="name">IntegrityAI Console</div></div>
+      <div class="login-sub">Pipeline corrosion risk &amp; inspection prioritization</div>
+      <form id="login-form">
+        <div class="field">
+          <label>Username</label>
+          <input type="text" id="login-username" autocomplete="username" placeholder="e.g. supervisor1">
+        </div>
+        <div class="field">
+          <label>Password</label>
+          <input type="password" id="login-password" autocomplete="current-password">
+        </div>
+        <button type="submit" class="btn">Sign in</button>
+        <div id="login-error"></div>
+      </form>
+      <div class="demo-creds">
+        <div><strong>Demo accounts</strong> (this is a class project, not real auth):</div>
+        <div>inspector1 / inspect123 — scoped to Gulf Coast only</div>
+        <div>supervisor1 / supervise123 — sees all regions + fleet overview</div>
+        <div>admin / admin123 — full access</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== APP ===================== -->
+  <div id="app-view">
+    <div class="shell">
+      <div class="sidebar">
+        <div class="sidebar-brand"><div class="mark">IA</div><div class="name">IntegrityAI</div></div>
+        <div class="nav">
+          <div class="nav-item active" data-view="dashboard"><span class="dot"></span>Dashboard</div>
+          <div class="nav-item" id="nav-fleet" data-view="fleet"><span class="dot"></span>Fleet Overview</div>
+        </div>
+        <div class="sidebar-user">
+          <div class="name" id="user-name">—</div>
+          <div class="role" id="user-role">—</div>
+          <div class="region" id="user-region"></div>
+          <button id="logout-btn">Sign out</button>
+        </div>
+      </div>
+
+      <div class="main">
+
+        <!-- ---------- Dashboard view ---------- -->
+        <div id="view-dashboard">
+          <div class="page-header">
+            <div class="page-title">Dashboard</div>
+            <div class="page-sub" id="dashboard-scope-note"></div>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat-tile critical"><div class="label">Critical</div><div class="value" id="stat-critical">—</div></div>
+            <div class="stat-tile elevated"><div class="label">Elevated</div><div class="value" id="stat-elevated">—</div></div>
+            <div class="stat-tile normal"><div class="label">Normal</div><div class="value" id="stat-normal">—</div></div>
+          </div>
+
+          <div class="filter-bar">
+            <button class="filter-btn active" data-filter="all">All segments</button>
+            <button class="filter-btn" data-filter="critical">Critical</button>
+            <button class="filter-btn" data-filter="elevated">Elevated</button>
+            <button class="filter-btn" data-filter="normal">Normal</button>
+            <div class="spacer"></div>
+          </div>
+
+          <div class="panel">
+            <div class="table-scroll">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Segment</th>
+                    <th>Region</th>
+                    <th>Predicted rate (mpy)</th>
+                    <th>Risk</th>
+                    <th>Last inspected</th>
+                    <th>Status</th>
+                  </tr>
+                </thead>
+                <tbody id="segments-tbody"></tbody>
+              </table>
+              <div class="empty-state hidden" id="segments-empty">No segments match this filter.</div>
+            </div>
+          </div>
+          <div class="page-sub" id="segments-count-note" style="margin-top:10px;"></div>
+        </div>
+
+        <!-- ---------- Fleet overview view ---------- -->
+        <div id="view-fleet" class="hidden">
+          <div class="page-header">
+            <div class="page-title">Fleet Overview</div>
+            <div class="page-sub">Model performance and risk distribution across the full network</div>
+          </div>
+
+          <div class="stat-row">
+            <div class="stat-tile"><div class="label">Total segments</div><div class="value" id="fleet-total">—</div></div>
+            <div class="stat-tile critical"><div class="label">Critical</div><div class="value" id="fleet-critical">—</div></div>
+            <div class="stat-tile elevated"><div class="label">Elevated</div><div class="value" id="fleet-elevated">—</div></div>
+            <div class="stat-tile normal"><div class="label">Normal</div><div class="value" id="fleet-normal">—</div></div>
+          </div>
+
+          <div class="fleet-grid">
+            <div class="panel" style="padding:18px 20px;">
+              <div class="card-title">Predicted corrosion rate distribution</div>
+              <canvas id="histogram-chart" height="140"></canvas>
+            </div>
+            <div class="panel" style="padding:18px 20px;">
+              <div class="card-title">Average predicted rate by region (mpy)</div>
+              <div id="region-breakdown"></div>
+            </div>
+          </div>
+
+          <button class="btn btn-ghost btn-sm" id="export-btn">Export at-risk segments (CSV)</button>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- ===================== Segment detail slide-over ===================== -->
+  <div id="overlay"></div>
+  <div id="detail-panel" style="display:none;">
+    <button class="close-btn" id="detail-close">&times;</button>
+    <h2 id="detail-id">—</h2>
+    <div class="region-line" id="detail-region">—</div>
+
+    <div class="detail-section">
+      <h3>Risk assessment</h3>
+      <div id="detail-risk-line" style="font-size:14px;"></div>
+    </div>
+
+    <div class="detail-section" id="detail-explanation-section">
+      <h3>Why this prediction (SHAP)</h3>
+      <div id="detail-shap"></div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Recommended action</h3>
+      <div class="rec-box" id="detail-recommendation"></div>
+    </div>
+
+    <div class="detail-section">
+      <h3>Segment attributes</h3>
+      <div class="attr-grid" id="detail-attrs"></div>
+    </div>
+
+    <button class="btn" id="ack-btn">Acknowledge alert</button>
+    <div class="ack-tag" id="ack-status" style="margin-top:8px;"></div>
+  </div>
+
+<script>
+const API = window.location.origin;
+let TOKEN = null, ME = null, ALL_SEGMENTS = [], CURRENT_FILTER = 'all', HIST_CHART = null;
+
+// ---------- helpers ----------
+async function api(path, opts = {}) {
+  const headers = opts.headers || {};
+  if (TOKEN) headers['Authorization'] = `Bearer ${TOKEN}`;
+  if (opts.body) headers['Content-Type'] = 'application/json';
+  const res = await fetch(API + path, { ...opts, headers });
+  if (!res.ok) {
+    const err = await res.json().catch(() => ({ detail: res.statusText }));
+    throw new Error(err.detail || 'Request failed');
+  }
+  return res;
+}
+
+function fmtRate(v) { return v.toFixed(2); }
+
+// ---------- login ----------
+document.getElementById('login-form').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const username = document.getElementById('login-username').value.trim();
+  const password = document.getElementById('login-password').value;
+  const errEl = document.getElementById('login-error');
+  errEl.style.display = 'none';
+  try {
+    const res = await fetch(API + '/api/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password }),
+    });
+    if (!res.ok) { const e2 = await res.json(); throw new Error(e2.detail); }
+    const data = await res.json();
+    TOKEN = data.token;
+    localStorage.setItem('integrityai_token', TOKEN);
+    await enterApp();
+  } catch (err) {
+    errEl.textContent = err.message;
+    errEl.style.display = 'block';
+  }
+});
+
+document.getElementById('logout-btn').addEventListener('click', async () => {
+  try { await api('/api/logout', { method: 'POST' }); } catch (e) {}
+  localStorage.removeItem('integrityai_token');
+  TOKEN = null;
+  document.getElementById('app-view').style.display = 'none';
+  document.getElementById('login-view').style.display = 'flex';
+});
+
+// ---------- app entry ----------
+async function enterApp() {
+  const res = await api('/api/me');
+  ME = await res.json();
+  document.getElementById('login-view').style.display = 'none';
+  document.getElementById('app-view').style.display = 'block';
+  document.getElementById('user-name').textContent = ME.name;
+  document.getElementById('user-role').textContent = ME.role;
+  document.getElementById('user-region').textContent = ME.region ? `Region: ${ME.region}` : 'All regions';
+  document.getElementById('dashboard-scope-note').textContent = ME.region
+    ? `Showing segments in your assigned region: ${ME.region}`
+    : 'Showing all regions';
+
+  if (ME.role === 'supervisor' || ME.role === 'admin') {
+    document.getElementById('nav-fleet').classList.remove('hidden');
+  } else {
+    document.getElementById('nav-fleet').classList.add('hidden');
+  }
+
+  await loadDashboard();
+}
+
+// ---------- nav ----------
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', async () => {
+    if (item.classList.contains('hidden')) return;
+    document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
+    item.classList.add('active');
+    const view = item.dataset.view;
+    document.getElementById('view-dashboard').classList.toggle('hidden', view !== 'dashboard');
+    document.getElementById('view-fleet').classList.toggle('hidden', view !== 'fleet');
+    if (view === 'fleet') await loadFleet();
+  });
+});
+
+// ---------- dashboard ----------
+async function loadDashboard() {
+  const [segRes, alertRes] = await Promise.all([api('/api/segments'), api('/api/alerts')]);
+  const segData = await segRes.json();
+  const alertData = await alertRes.json();
+  ALL_SEGMENTS = segData.segments;
+
+  document.getElementById('stat-critical').textContent = alertData.critical.length;
+  document.getElementById('stat-elevated').textContent = alertData.elevated.length;
+  const normalCount = ALL_SEGMENTS.filter(s => s.risk_band === 'normal').length;
+  document.getElementById('stat-normal').textContent = normalCount;
+
+  renderSegmentsTable();
+}
+
+document.querySelectorAll('.filter-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    CURRENT_FILTER = btn.dataset.filter;
+    renderSegmentsTable();
+  });
+});
+
+function renderSegmentsTable() {
+  const tbody = document.getElementById('segments-tbody');
+  const emptyEl = document.getElementById('segments-empty');
+  const rows = CURRENT_FILTER === 'all' ? ALL_SEGMENTS : ALL_SEGMENTS.filter(s => s.risk_band === CURRENT_FILTER);
+
+  const noteEl = document.getElementById('segments-count-note');
+  if (rows.length === 0) {
+    tbody.innerHTML = '';
+    emptyEl.classList.remove('hidden');
+    noteEl.textContent = '';
+    return;
+  }
+  emptyEl.classList.add('hidden');
+  const shown = Math.min(rows.length, 150);
+  noteEl.textContent = shown < rows.length
+    ? `Showing top ${shown} of ${rows.length} segments by predicted risk`
+    : `${rows.length} segment${rows.length === 1 ? '' : 's'}`;
+
+  tbody.innerHTML = rows.slice(0, 150).map(s => `
+    <tr class="row-clickable" data-id="${s.segment_id}">
+      <td class="seg-id">${s.segment_id}</td>
+      <td>${s.region}</td>
+      <td class="mono">${fmtRate(s.predicted_rate_mpy)}</td>
+      <td><span class="badge ${s.risk_band}">${s.risk_band}</span></td>
+      <td>${s.last_inspection_years_ago.toFixed(1)} yrs ago</td>
+      <td>${s.acknowledged ? '<span class="ack-tag">Acknowledged</span>' : ''}</td>
+    </tr>
+  `).join('');
+
+  tbody.querySelectorAll('tr').forEach(tr => {
+    tr.addEventListener('click', () => openDetail(tr.dataset.id));
+  });
+}
+
+// ---------- segment detail ----------
+async function openDetail(segmentId) {
+  let detail;
+  try {
+    const res = await api(`/api/segments/${segmentId}`);
+    detail = await res.json();
+  } catch (err) {
+    alert(err.message);
+    return;
+  }
+
+  document.getElementById('detail-id').textContent = detail.segment_id;
+  document.getElementById('detail-region').textContent = `${detail.region} region`;
+  document.getElementById('detail-risk-line').innerHTML =
+    `<span class="badge ${detail.risk_band}">${detail.risk_band}</span> &nbsp; Predicted rate: <span class="mono">${fmtRate(detail.predicted_rate_mpy)} mils/year</span>`;
+
+  const contributions = detail.explanation.contributions;
+  const maxAbs = Math.max(...contributions.map(c => Math.abs(c.impact_mpy)), 0.01);
+  document.getElementById('detail-shap').innerHTML = contributions.map(c => {
+    const pct = Math.min(Math.abs(c.impact_mpy) / maxAbs * 50, 50);
+    const cls = c.impact_mpy >= 0 ? 'pos' : 'neg';
+    return `
+      <div class="shap-row">
+        <div class="shap-label"><span class="feat">${c.feature}</span><span class="impact">${c.impact_mpy > 0 ? '+' : ''}${c.impact_mpy.toFixed(2)} mpy</span></div>
+        <div class="shap-bar-track"><div class="center-tick"></div><div class="shap-bar-fill ${cls}" style="width:${pct}%;"></div></div>
+      </div>`;
+  }).join('');
+
+  const topDriver = contributions[0];
+  document.getElementById('detail-recommendation').textContent = detail.risk_band === 'critical'
+    ? `Schedule direct assessment within 30 days. Primary driver: ${topDriver.feature.replaceAll('_', ' ')}.`
+    : detail.risk_band === 'elevated'
+    ? `Add to next inspection cycle. Primary driver: ${topDriver.feature.replaceAll('_', ' ')}.`
+    : `No immediate action required. Continue routine monitoring schedule.`;
+
+  document.getElementById('detail-attrs').innerHTML = Object.entries(detail.attributes).map(([k, v]) => `
+    <div><div class="k">${k.replaceAll('_', ' ')}</div><div class="v">${v}</div></div>
+  `).join('');
+
+  const ackBtn = document.getElementById('ack-btn');
+  const ackStatus = document.getElementById('ack-status');
+  if (detail.acknowledged) {
+    ackBtn.disabled = true;
+    ackBtn.textContent = 'Already acknowledged';
+    ackStatus.textContent = `By ${detail.acknowledged.by} at ${detail.acknowledged.at}`;
+  } else {
+    ackBtn.disabled = false;
+    ackBtn.textContent = 'Acknowledge alert';
+    ackStatus.textContent = '';
+  }
+  ackBtn.onclick = async () => {
+    await api(`/api/segments/${segmentId}/acknowledge`, { method: 'POST' });
+    await openDetail(segmentId);
+    await loadDashboard();
+  };
+
+  document.getElementById('overlay').style.display = 'block';
+  document.getElementById('detail-panel').style.display = 'block';
+}
+
+document.getElementById('detail-close').addEventListener('click', closeDetail);
+document.getElementById('overlay').addEventListener('click', closeDetail);
+function closeDetail() {
+  document.getElementById('overlay').style.display = 'none';
+  document.getElementById('detail-panel').style.display = 'none';
+}
+
+// ---------- fleet overview ----------
+async function loadFleet() {
+  const res = await api('/api/stats');
+  const stats = await res.json();
+
+  document.getElementById('fleet-total').textContent = stats.total_segments;
+  document.getElementById('fleet-critical').textContent = stats.risk_band_counts.critical;
+  document.getElementById('fleet-elevated').textContent = stats.risk_band_counts.elevated;
+  document.getElementById('fleet-normal').textContent = stats.risk_band_counts.normal;
+
+  const regionEl = document.getElementById('region-breakdown');
+  regionEl.innerHTML = Object.entries(stats.avg_predicted_rate_by_region).map(([region, rate]) => `
+    <div class="region-row"><span>${region}</span><span class="rate">${rate.toFixed(2)} mpy</span></div>
+  `).join('');
+
+  const ctx = document.getElementById('histogram-chart');
+  const labels = stats.histogram.bin_edges.slice(0, -1).map((e, i) => `${e}`);
+  if (HIST_CHART) HIST_CHART.destroy();
+  HIST_CHART = new Chart(ctx, {
+    type: 'bar',
+    data: { labels, datasets: [{ data: stats.histogram.counts, backgroundColor: '#4C8DFF', borderRadius: 2 }] },
+    options: {
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { ticks: { color: '#8A94A0', font: { size: 10 } }, grid: { display: false } },
+        y: { ticks: { color: '#8A94A0', font: { size: 10 } }, grid: { color: '#2A323A' } },
+      },
+    },
+  });
+}
+
+document.getElementById('export-btn').addEventListener('click', async () => {
+  const res = await api('/api/export.csv');
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'at_risk_segments.csv';
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+// ---------- boot ----------
+(async function boot() {
+  const saved = localStorage.getItem('integrityai_token');
+  if (saved) {
+    TOKEN = saved;
+    try {
+      await enterApp();
+      return;
+    } catch (e) {
+      localStorage.removeItem('integrityai_token');
+      TOKEN = null;
+    }
+  }
+  document.getElementById('login-view').style.display = 'flex';
+})();
+</script>
+</body>
+</html>
