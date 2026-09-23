@@ -36,49 +36,50 @@
 */
 
 @theme {
-  /* --- graphite base ---------------------------------------------------- */
-  --color-bg: #0d1013;
-  --color-panel: #14181d;
-  --color-raised: #1b2026;
-  --color-line: #252c34;
-  --color-line-soft: #1c2229;
+  /* --- petroleum graphite ----------------------------------------------
+     Not neutral grey. Each surface carries a trace of green, which is what
+     separates an industrial panel from a default dark theme. */
+  --color-bg: #0d1110;
+  --color-panel: #151b19;
+  --color-raised: #202824;
+  --color-sunken: #080b0a;
+  --color-line: #2a322e;
+  --color-line-soft: #1e2522;
+  /* Borders only. 2.74:1 - it must never carry text. */
+  --color-hairline: #626b65;
 
-  /* --- ink -------------------------------------------------------------- */
-  --color-ink: #e8e6e1;
-  /* 7.94:1 on the panel. Was #8d949c; each step moved up one so that the
-     dimmest text token could clear 4.5:1 without collapsing the hierarchy. */
-  --color-muted: #a6aeb6;
-  /* 5.81:1 on the panel, 5.35:1 on a raised row. Was #5a626b at 2.88:1,
-     which is a contrast failure for every one of its 81 uses. */
-  --color-dim: #8d949c;
-  /* The old value, kept for HAIRLINES ONLY - it is not legible as text. */
-  --color-hairline: #5a626b;
+  /* --- ink, shifted one step so the dimmest still clears 4.5:1 ---------- */
+  --color-ink: #f1f3ed;        /* 13.5:1 worst case */
+  --color-secondary: #c9cec7;  /*  9.5:1 */
+  --color-muted: #a6aea8;      /*  6.7:1 */
+  --color-dim: #8d9690;        /*  5.0:1 */
 
-  /* --- safety amber: the single accent ---------------------------------- */
-  --color-accent: #f5a524;
-  --color-accent-soft: #4a3717;
+  /* --- two accents, two jobs -------------------------------------------
+     Primary is identity and interaction. Amber is caution and NOTHING
+     else, so an amber element is never ambiguous. */
+  --color-accent: #b8d04a;
+  --color-accent-deep: #9dbb3a;
+  --color-accent-soft: #1d2410;
+  --color-amber: #d99a32;
+  --color-amber-deep: #c47d22;
 
-  /* --- HMI status colours, used ONLY for status ------------------------- */
-  --color-critical: #ff4d3d;
-  --color-elevated: #f5a524;
-  --color-normal: #35c77f;
+  /* --- HMI status, used ONLY for status --------------------------------- */
+  --color-critical: #e4735c;   /* lifted from #d65a45, which failed on raised */
+  --color-elevated: #e0a23b;
+  --color-normal: #7ea64a;
 
   /* --- risk-matrix bands ------------------------------------------------
-     Four ordered severity steps. These are STATUS colours, not a categorical
-     or sequential ramp, and the distinction is what makes them legal: every
-     four-step ramp across green->red fails the categorical adjacent-pair
-     separation, and any ramp that passes the ordinal single-hue rule throws
-     away the traffic-light reading the discipline actually uses.
-
-     Status is the right job for them, and status has one obligation: hue
-     never carries the meaning alone. Every cell prints its count, the legend
-     names every band, and the band is a function of row x column. All four
-     clear 3:1 against the panel surface - checked, not eyeballed. The light
-     theme gets its own steps below, never an automatic flip. */
-  --color-band-low: #35c77f;       /* 8.17:1 */
-  --color-band-moderate: #f5a524;  /* 8.73:1 */
-  --color-band-high: #ec835a;      /* 6.76:1 */
-  --color-band-severe: #ff4d3d;    /* 5.42:1 */
+     Four ordered severity steps. STATUS colours, not a categorical or
+     sequential ramp: every four-step ramp across green->red fails the
+     categorical adjacent-pair separation, and a single-hue ordinal ramp
+     throws away the traffic-light reading the discipline actually uses.
+     Status is the right job, and status has one obligation - hue never
+     carries the meaning alone. Every cell prints its count, the legend
+     names every band, and band is a function of row x column. */
+  --color-band-low: #7ea64a;
+  --color-band-moderate: #d99a32;
+  --color-band-high: #d8794a;
+  --color-band-severe: #e4735c;
 
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -88,32 +89,33 @@
 /* Light theme: technical paper, not plain white. Warm off-white with a blue-
    black ink, the way a printed drawing sheet reads. */
 html.light {
-  --color-bg: #eceae4;
-  --color-panel: #f7f6f2;
-  --color-raised: #e6e3dc;
-  --color-line: #c9c5bb;
-  --color-line-soft: #d8d4cb;
+  --color-bg: #e9ebe4;
+  --color-panel: #f4f5f0;
+  --color-raised: #dfe2d9;
+  --color-sunken: #d5d8ce;
+  --color-line: #c2c6ba;
+  --color-line-soft: #d3d7cb;
+  --color-hairline: #9aa093;
 
-  --color-ink: #14181c;
-  /* Re-stepped for paper, not derived from the dark set. 6.28:1 worst. */
-  --color-muted: #4a5158;
-  /* 5.21:1 worst. Was #838a91 at 2.73:1 on a raised row. */
-  --color-dim: #565d64;
-  --color-hairline: #838a91;
+  --color-ink: #10140f;
+  --color-secondary: #343a31;
+  --color-muted: #4a5147;
+  --color-dim: #5c6359;
 
-  --color-accent: #9a6200;
-  --color-accent-soft: #f0dfc0;
+  --color-accent: #56691a;
+  --color-accent-deep: #435213;
+  --color-accent-soft: #e3e9c6;
+  --color-amber: #8a5a05;
+  --color-amber-deep: #6d4704;
 
-  --color-critical: #c22f21;
-  --color-elevated: #8a5c00;
-  --color-normal: #1c7a4f;
+  --color-critical: #a8311c;
+  --color-elevated: #7d5306;
+  --color-normal: #3f6318;
 
-  /* Re-stepped for paper, not dimmed copies of the dark set. Contrast
-     against the light panel: 4.92 / 5.38 / 4.74 / 5.22. */
-  --color-band-low: #1c7a4f;
-  --color-band-moderate: #8a5c00;
-  --color-band-high: #b1521f;
-  --color-band-severe: #c22f21;
+  --color-band-low: #3f6318;
+  --color-band-moderate: #7d5306;
+  --color-band-high: #97441c;
+  --color-band-severe: #a8311c;
   color-scheme: light;
 }
 
@@ -216,11 +218,36 @@ body {
               0 0 9px color-mix(in srgb, currentColor 55%, transparent);
 }
 
-.lamp-critical { animation: lamp-pulse 1.9s ease-in-out infinite; }
+/* The lamp draws from currentColor, so the state classes set that and
+   nothing else. One rule per state, and the state is never implied by
+   position or size alone. */
+.lamp-normal   { color: var(--color-normal); }
+.lamp-elevated { color: var(--color-elevated); }
+.lamp-critical { color: var(--color-critical); animation: lamp-pulse 1.9s ease-in-out infinite; }
 
 @keyframes lamp-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.35; }
+}
+
+/* --- view transition -----------------------------------------------------
+   Deliberately short and small. An operator switching views is working, not
+   being presented to: 180ms and 6px reads as responsiveness, while the
+   400ms+ slides a marketing site uses would read as lag by the third time
+   you used it. */
+.view-enter {
+  animation: view-in 180ms cubic-bezier(0.22, 0.7, 0.2, 1) both;
+}
+@keyframes view-in {
+  from { opacity: 0; transform: translate3d(0, 6px, 0); }
+  to   { opacity: 1; transform: none; }
+}
+
+/* --- boot sweep ---------------------------------------------------------- */
+.boot-sweep { animation: boot-sweep 1.1s ease-in-out infinite; }
+@keyframes boot-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
 }
 
 /* --- scrollbars ---------------------------------------------------------- */
@@ -242,6 +269,10 @@ body {
     animation-duration: 0.01ms !important;
     transition-duration: 0.01ms !important;
   }
+  /* Shortening a LOOP turns it into a flicker, which is worse than the
+     animation it replaced. These stop outright. */
+  .lamp-critical, .boot-sweep { animation: none !important; }
+  .view-enter { animation: none !important; opacity: 1; transform: none; }
 }
 
 /* --- LLM markdown output ------------------------------------------------- */

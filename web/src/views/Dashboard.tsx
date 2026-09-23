@@ -292,8 +292,48 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
 
   const hcaCount = segments.filter((s) => s.is_hca).length;
 
+  /* Everything in the metric strip is derived from `segments`, which is
+     already loaded for the register. No extra request, and nothing shown
+     that the fleet data does not actually support. */
+  const metrics = useMemo(() => {
+    const n = segments.length || 1;
+    const count = (b: RiskBand) => segments.filter((s) => s.risk_band === b).length;
+    const meanRate = segments.reduce((a, s) => a + s.predicted_rate_mpy, 0) / n;
+    return {
+      critical: count('critical'),
+      elevated: count('elevated'),
+      normal: count('normal'),
+      meanRate,
+    };
+  }, [segments]);
+
   return (
     <div className="flex flex-col gap-3">
+      {/* ---- operational metrics ----------------------------------------
+          Typography and rules, not cards. A row of bordered boxes with a
+          number in each is the single most template-looking thing a console
+          can do, and it costs vertical space the map wants. */}
+      <div className="flex flex-wrap items-stretch border border-line-soft bg-panel">
+        <Metric label="Fleet" value={segments.length.toLocaleString()} unit="segments" />
+        <Metric
+          label="In HCA" value={hcaCount.toLocaleString()}
+          unit={`${((hcaCount / (segments.length || 1)) * 100).toFixed(1)}%`}
+          tone="amber"
+        />
+        <Metric label="Critical" value={metrics.critical.toLocaleString()}
+                unit="segments" tone="critical" />
+        <Metric label="Elevated" value={metrics.elevated.toLocaleString()}
+                unit="segments" tone="elevated" />
+        <Metric label="Mean rate" value={metrics.meanRate.toFixed(2)} unit="mpy" />
+        <div className="flex-1" />
+        <div className="flex items-center gap-2 px-4 py-2.5">
+          <span className="label" style={{ fontSize: 8.5 }}>Scope</span>
+          <span className="num text-[11.5px] text-secondary">
+            {me.region ?? 'All zones'}
+          </span>
+        </div>
+      </div>
+
       {/* ---- where, and how bad ------------------------------------------ */}
       <div className="grid gap-3 [grid-template-columns:1fr] xl:[grid-template-columns:minmax(0,1.25fr)_minmax(400px,1fr)]">
         <Module
@@ -572,4 +612,34 @@ function TrendCell({ segmentId, band }: { segmentId: string; band: RiskBand }) {
   }
   return <Sparkline series={series} width={52} height={14}
                     tone={BAND_COLOR[toBand(band)]} />;
+}
+
+/** One reading in the operational strip.
+ *
+ *  Vertical rules rather than boxes: the numbers are separated but the row
+ *  still reads as one instrument, which is what a control panel does and a
+ *  grid of cards does not. */
+function Metric({
+  label, value, unit, tone,
+}: {
+  label: string;
+  value: string;
+  unit?: string;
+  tone?: 'critical' | 'elevated' | 'amber';
+}) {
+  const color =
+    tone === 'critical' ? 'text-critical'
+      : tone === 'elevated' ? 'text-elevated'
+        : tone === 'amber' ? 'text-amber' : 'text-ink';
+  return (
+    <div className="border-r border-line-soft px-4 py-2 first:pl-4">
+      <div className="label" style={{ fontSize: 8.5 }}>{label}</div>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        <span className={cx('num text-[19px] font-medium leading-none', color)}>
+          {value}
+        </span>
+        {unit && <span className="num text-[10px] text-dim">{unit}</span>}
+      </div>
+    </div>
+  );
 }
