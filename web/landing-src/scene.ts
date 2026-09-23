@@ -1,56 +1,124 @@
-/* The Corvex landing scene.
+/* The Corvex landing scene — a pipeline corridor in late-afternoon light.
+ *
+ * WHY THIS IS NOT THE DARK VERSION
+ *
+ *   The first version put dark steel (#1e2522–#4a544e) on a near-black
+ *   ground (#0d1110) under a 94%-opacity scrim. The pipe was rendering
+ *   correctly and was invisible: near-black on near-black, behind a curtain.
+ *   No amount of camera work fixes a subject that has no contrast with its
+ *   background.
+ *
+ *   So the scene is daylight. Sunlit steel against grass and sky is high
+ *   contrast by construction, which means the pipeline reads instantly
+ *   instead of having to be hunted for. The copy keeps its dark treatment
+ *   via a left-weighted gradient in CSS, so the type system is unchanged.
  *
  * ONE SCENE, NOT TEN
  *
- *   The page reads as a single continuous journey, so it is a single
- *   persistent Three.js scene that the scroll moves a camera through —
- *   rather than a stack of sections each with its own canvas. Swapping
- *   canvases is what makes a "cinematic" page feel like a slideshow: every
- *   boundary is a cut, and cuts are exactly what this is trying to avoid.
- *
- *   The whole visual state is therefore one number: `progress`, 0 to 1 down
- *   the page. Camera position, camera target, fog density, corrosion,
- *   network opacity and dust drift are all functions of it. Nothing is
- *   animated on a timer that the scroll does not own, which is why
- *   scrubbing backwards looks identical to scrubbing forwards.
- *
- * WHAT IS PROCEDURAL AND WHY
- *
- *   The corrosion is a shader, not a texture. A pasted rust map shows the
- *   same damage everywhere and cannot respond to anything; a field whose
- *   threshold falls as `uCorrosion` rises grows visibly worse as the reader
- *   scrolls into the section that explains corrosion. The visual makes the
- *   argument rather than decorating it.
+ *   The canvas is fixed behind every section and one camera travels one
+ *   route for the whole page. The entire visual state is a single number,
+ *   `progress`, 0 to 1. Camera, sun, corrosion, haze and flare are all
+ *   functions of it — which is why scrubbing back up looks identical to
+ *   scrolling down.
  *
  * FAILURE
  *
- *   `create` returns null if WebGL is unavailable or the context is lost.
- *   The caller removes the canvas and the page keeps its flat fallback. A
- *   hero that cannot render must never be a hole.
+ *   `create` returns null if WebGL is unavailable. The caller removes the
+ *   canvas and the flat CSS fallback shows through.
  */
 import {
-  AdditiveBlending, AmbientLight, BufferAttribute, BufferGeometry,
-  CatmullRomCurve3, Color, CylinderGeometry, DirectionalLight, DoubleSide, Fog,
-  Group, InstancedMesh, Line, LineBasicMaterial, Mesh, MeshStandardMaterial,
-  Object3D, PerspectiveCamera, Points, PointsMaterial, Scene, ShaderMaterial,
-  SRGBColorSpace, TubeGeometry, Vector3, WebGLRenderer,
+  AdditiveBlending, AmbientLight, BackSide, BoxGeometry, CatmullRomCurve3,
+  Color, CylinderGeometry, DirectionalLight, DoubleSide, Fog, Group,
+  HemisphereLight, InstancedMesh, Mesh, MeshStandardMaterial, Object3D,
+  PerspectiveCamera, PlaneGeometry, Scene, ShaderMaterial, SRGBColorSpace,
+  SphereGeometry, TubeGeometry, Vector3, WebGLRenderer,
 } from 'three';
 
 /* ============================================================== palette == */
-/* Same values as the console. Kept as numbers here because Three wants
-   linear colour, and reading them from CSS would mean a layout read on
-   every frame. */
 const C = {
-  bg: 0x0d1110,
-  steelDark: 0x1e2522,
-  steelLight: 0x4a544e,
+  skyTop: 0x6f9ec6,
+  skyHaze: 0xd6d7c4,
+  grass: 0x5d7a3c,
+  grassLit: 0x86a352,
+  steel: 0x9aa49b,
+  steelLit: 0xd3d9d0,
+  rust: 0x8a4a1e,
   accent: 0xb8d04a,
-  amber: 0xd99a32,
-  critical: 0xe4735c,
-  dust: 0x8d9690,
+  flame: 0xffa32e,
+  tank: 0x8e968f,
 };
 
 /* ============================================================== shaders == */
+
+const SKY_FRAG = /* glsl */ `
+precision mediump float;
+varying vec3 vPos;
+uniform vec3 uTop, uHaze;
+void main() {
+  // Normalised height on the dome. The haze band sits low and tight, the
+  // way real aerial perspective does - a linear top-to-bottom ramp reads
+  // as a gradient backdrop rather than as sky.
+  float h = clamp(normalize(vPos).y * 0.5 + 0.5, 0.0, 1.0);
+  float t = pow(clamp((h - 0.42) / 0.5, 0.0, 1.0), 0.75);
+  gl_FragColor = vec4(mix(uHaze, uTop, t), 1.0);
+}`;
+
+const SKY_VERT = /* glsl */ `
+varying vec3 vPos;
+void main() {
+  vPos = position;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+}`;
+
+const GROUND_VERT = /* glsl */ `
+varying vec2 vUv;
+varying vec3 vWorld;
+void main() {
+  vUv = uv;
+  vec4 w = modelMatrix * vec4(position, 1.0);
+  vWorld = w.xyz;
+  gl_Position = projectionMatrix * viewMatrix * w;
+}`;
+
+const GROUND_FRAG = /* glsl */ `
+precision highp float;
+varying vec2 vUv;
+varying vec3 vWorld;
+uniform vec3 uGrass, uGrassLit, uHaze;
+uniform float uFogNear, uFogFar;
+uniform vec3 uCam;
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0,0.0)), f.x),
+             mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), f.x), f.y);
+}
+float fbm(vec2 p){
+  float s = 0.0, a = 0.5;
+  for (int k = 0; k < 4; k++) { s += a * vnoise(p); p *= 2.05; a *= 0.5; }
+  return s;
+}
+
+void main() {
+  // Two scales of variation: broad patches, and a fine break-up so the
+  // ground does not read as a flat sheet of colour close to the camera.
+  float broad = fbm(vWorld.xz * 0.012);
+  float fine  = fbm(vWorld.xz * 0.19);
+  vec3 col = mix(uGrass, uGrassLit, broad * 0.75 + fine * 0.25);
+
+  // A worn right-of-way strip either side of the line: the corridor is
+  // mown and driven on, so it should not look like untouched meadow.
+  float corridor = smoothstep(16.0, 6.0, abs(vWorld.z + 8.0));
+  col = mix(col, col * 1.12 + vec3(0.05, 0.045, 0.03), corridor * 0.7);
+
+  // Aerial perspective, applied here rather than by scene fog so the
+  // horizon dissolves into the SAME haze the sky uses.
+  float d = distance(vWorld, uCam);
+  float f = clamp((d - uFogNear) / max(uFogFar - uFogNear, 1.0), 0.0, 1.0);
+  gl_FragColor = vec4(mix(col, uHaze, f), 1.0);
+}`;
 
 const PIPE_VERT = /* glsl */ `
 varying vec2 vUv;
@@ -70,17 +138,15 @@ varying vec2 vUv;
 varying vec3 vNormalW;
 varying vec3 vWorld;
 
-uniform vec3 uCam;
-uniform vec3 uSteelDark, uSteelLight, uRust, uRim;
-uniform float uCorrosion;
-uniform float uTime;
+uniform vec3 uCam, uSteel, uSteelLit, uRust, uHaze, uSun;
+uniform float uCorrosion, uFogNear, uFogFar;
 
 float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
 float vnoise(vec2 p){
   vec2 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
-  return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), f.x),
-             mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), f.x), f.y);
+  return mix(mix(hash(i), hash(i + vec2(1.0,0.0)), f.x),
+             mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), f.x), f.y);
 }
 float fbm(vec2 p){
   float s = 0.0, a = 0.5;
@@ -91,62 +157,100 @@ float fbm(vec2 p){
 void main() {
   vec3 N = normalize(vNormalW);
   vec3 V = normalize(uCam - vWorld);
-  vec3 L = normalize(vec3(-0.4, 0.86, 0.32));
+  vec3 L = normalize(uSun);
 
   float diff = max(dot(N, L), 0.0);
+  float spec = pow(max(dot(reflect(-L, N), V), 0.0), 34.0);
   float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
 
-  // uv.x runs ALONG the tube, uv.y around it. Scaling them differently is
-  // what stops the grain looking like wrapping paper.
-  vec2 sp = vec2(vUv.x * 160.0, vUv.y * 13.0);
+  // uv.x runs along the tube, uv.y around it. Different scales, or the
+  // grain looks like wrapping paper.
+  vec2 sp = vec2(vUv.x * 150.0, vUv.y * 12.0);
   float grain = fbm(sp * 1.6);
 
-  // The threshold falls as corrosion rises, so the same field grows more
-  // pitted instead of reshuffling into a different pattern. Two moments in
-  // the scroll therefore look continuous rather than like a cross-fade.
-  float thresh = mix(0.90, 0.44, clamp(uCorrosion, 0.0, 1.0));
-  float pit = smoothstep(thresh, thresh + 0.085, fbm(sp * 2.7 + 13.0));
+  // The threshold falls as corrosion rises, so the SAME field grows more
+  // pitted rather than reshuffling - two moments in the scroll therefore
+  // look continuous instead of like a cross-fade.
+  float thresh = mix(0.92, 0.46, clamp(uCorrosion, 0.0, 1.0));
+  float pit = smoothstep(thresh, thresh + 0.08, fbm(sp * 2.7 + 13.0));
 
-  // Girth welds at regular stations, and a longitudinal seam.
-  float weld = smoothstep(0.988, 0.999, abs(sin(vUv.x * 3.14159 * 46.0)));
-  float seam = smoothstep(0.02, 0.0, abs(vUv.y - 0.5));
+  float weld = smoothstep(0.988, 0.999, abs(sin(vUv.x * 3.14159 * 44.0)));
 
-  vec3 col = mix(uSteelDark, uSteelLight, grain);
-  col = mix(col, uRust, pit * 0.94);
-  col = mix(col, uSteelLight * 1.15, max(weld, seam * 0.5) * 0.45);
-  col *= 0.24 + 0.86 * diff;
+  vec3 col = mix(uSteel, uSteelLit, grain * 0.8);
+  col = mix(col, uRust, pit * 0.9);
+  col = mix(col, uSteelLit, weld * 0.4);
 
-  // Pits are holes: they lose the rim light as well as the diffuse.
-  col += uRim * fres * 0.34 * (1.0 - pit * 0.8);
+  // Sunlit steel: a strong diffuse term plus a tight highlight is what
+  // makes a cylinder read as metal rather than as a painted tube.
+  col *= 0.42 + 0.78 * diff;
+  col += vec3(1.0, 0.96, 0.86) * spec * (1.0 - pit * 0.85) * 0.85;
+  col += uHaze * fres * 0.22;
 
-  gl_FragColor = vec4(col, 1.0);
+  float d = distance(vWorld, uCam);
+  float f = clamp((d - uFogNear) / max(uFogFar - uFogNear, 1.0), 0.0, 1.0);
+  gl_FragColor = vec4(mix(col, uHaze, f), 1.0);
+}`;
+
+const FLAME_FRAG = /* glsl */ `
+precision mediump float;
+varying vec2 vUv;
+uniform float uTime;
+uniform vec3 uFlame;
+
+float hash(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123); }
+float vnoise(vec2 p){
+  vec2 i = floor(p), f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(mix(hash(i), hash(i + vec2(1.0,0.0)), f.x),
+             mix(hash(i + vec2(0.0,1.0)), hash(i + vec2(1.0,1.0)), f.x), f.y);
+}
+
+void main() {
+  // Flame rises: scrolling the noise DOWN in uv makes the detail travel up
+  // the quad. Wind shear leans it as it climbs.
+  float lean = (vUv.y * vUv.y) * 0.34;
+  vec2 p = vec2(vUv.x * 3.0 - lean, vUv.y * 2.2 - uTime * 1.9);
+  float n = vnoise(p) * 0.6 + vnoise(p * 2.3) * 0.4;
+
+  // Taper to a point, and fade out at the top.
+  float width = 1.0 - smoothstep(0.0, 1.0, vUv.y) * 0.72;
+  float across = smoothstep(width, 0.0, abs(vUv.x - 0.5 + lean * 0.5) * 2.0);
+  float up = (1.0 - smoothstep(0.35, 1.0, vUv.y));
+
+  float a = across * up * (0.55 + n * 0.7);
+  a = clamp(a, 0.0, 1.0);
+
+  // Hotter and whiter at the base.
+  vec3 col = mix(uFlame, vec3(1.0, 0.95, 0.78), (1.0 - vUv.y) * 0.6);
+  gl_FragColor = vec4(col, a);
+}`;
+
+const FLAME_VERT = /* glsl */ `
+varying vec2 vUv;
+void main() {
+  vUv = uv;
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
 }`;
 
 /* =========================================================== the route == */
 
-/* The corridor the camera flies along. Deliberately not straight: a
-   perfectly straight tube gives the camera nothing to reveal, and the whole
-   point of moving is that something new comes into view. */
+const GROUND_Y = -7;
+const PIPE_Y = -2.4;
+
+/* The corridor. Deliberately not straight: a straight tube gives the camera
+   nothing to reveal, and the whole point of travelling is that something
+   new comes into view. */
 const ROUTE_POINTS = [
-  new Vector3(-150, -6, 40),
-  new Vector3(-96, -2, 12),
-  new Vector3(-44, 3, -14),
-  new Vector3(6, 1, -30),
-  new Vector3(58, -3, -20),
-  new Vector3(104, 2, 10),
-  new Vector3(152, 8, 44),
+  new Vector3(-300, PIPE_Y - 1, 26),
+  new Vector3(-200, PIPE_Y, 4),
+  new Vector3(-100, PIPE_Y + 1, -12),
+  new Vector3(0, PIPE_Y, -18),
+  new Vector3(105, PIPE_Y + 1, -8),
+  new Vector3(210, PIPE_Y, 14),
+  new Vector3(320, PIPE_Y + 2, 40),
 ];
 
-/* Lateral routes, lit later in the scroll when the single line becomes a
-   network. Offsets from the trunk rather than independent curves, so they
-   read as branches instead of unrelated lines. */
-const BRANCH_DEFS: { at: number; dir: Vector3; len: number }[] = [
-  { at: 0.22, dir: new Vector3(-0.4, 0.1, 1), len: 46 },
-  { at: 0.38, dir: new Vector3(0.6, -0.05, 0.9), len: 34 },
-  { at: 0.55, dir: new Vector3(-0.8, 0.15, -0.5), len: 52 },
-  { at: 0.72, dir: new Vector3(0.5, 0.2, -1), len: 40 },
-  { at: 0.86, dir: new Vector3(-0.3, -0.1, 1), len: 30 },
-];
+const SUN = new Vector3(-0.42, 0.58, 0.70);
 
 export interface SceneHandle {
   setProgress(p: number): void;
@@ -159,146 +263,226 @@ export function create(canvas: HTMLCanvasElement, reduced: boolean): SceneHandle
   let renderer: WebGLRenderer;
   try {
     renderer = new WebGLRenderer({
-      canvas, antialias: true, alpha: true, powerPreference: 'high-performance',
+      canvas, antialias: true, alpha: false, powerPreference: 'high-performance',
     });
   } catch {
     return null;
   }
   if (!renderer.getContext()) return null;
 
-  renderer.setClearColor(C.bg, 0);
+  renderer.setClearColor(C.skyHaze, 1);
   renderer.outputColorSpace = SRGBColorSpace;
 
   const scene = new Scene();
-  // Fog is doing the atmospheric work that a post-processing pass usually
-  // does, at a fraction of the cost and with no extra render target.
-  scene.fog = new Fog(C.bg, 40, 260);
+  const camera = new PerspectiveCamera(48, 1, 0.5, 4000);
 
-  const camera = new PerspectiveCamera(46, 1, 0.5, 600);
+  const hazeCol = new Color(C.skyHaze);
+  const FOG_NEAR = 120;
+  const FOG_FAR = 1050;
+  scene.fog = new Fog(C.skyHaze, FOG_NEAR, FOG_FAR);
 
   /* ---------------------------------------------------------- lighting -- */
-  scene.add(new AmbientLight(0x2a332e, 1.0));
-  const key = new DirectionalLight(0xdfe6d2, 1.5);
-  key.position.set(-40, 70, 30);
-  scene.add(key);
-  const fill = new DirectionalLight(C.amber, 0.35);
-  fill.position.set(60, -20, -40);
-  scene.add(fill);
+  /* A warm low sun plus a sky/ground hemisphere. The hemisphere is what
+     stops shadowed sides going flat black the way a single directional
+     light leaves them. */
+  scene.add(new HemisphereLight(C.skyTop, C.grass, 1.25));
+  scene.add(new AmbientLight(0xffffff, 0.22));
+  const sun = new DirectionalLight(0xffe9c4, 2.1);
+  sun.position.copy(SUN).multiplyScalar(300);
+  scene.add(sun);
 
-  /* ------------------------------------------------------- the pipeline -- */
+  /* --------------------------------------------------------------- sky -- */
+  const sky = new Mesh(
+    new SphereGeometry(2200, 32, 20),
+    new ShaderMaterial({
+      vertexShader: SKY_VERT,
+      fragmentShader: SKY_FRAG,
+      uniforms: { uTop: { value: new Color(C.skyTop) }, uHaze: { value: hazeCol } },
+      side: BackSide,
+      fog: false,
+      depthWrite: false,
+    }),
+  );
+  scene.add(sky);
+
+  /* ------------------------------------------------------------ ground -- */
+  const groundUniforms = {
+    uGrass: { value: new Color(C.grass) },
+    uGrassLit: { value: new Color(C.grassLit) },
+    uHaze: { value: hazeCol },
+    uFogNear: { value: FOG_NEAR },
+    uFogFar: { value: FOG_FAR },
+    uCam: { value: new Vector3() },
+  };
+  const ground = new Mesh(
+    new PlaneGeometry(4000, 4000, 1, 1),
+    new ShaderMaterial({
+      vertexShader: GROUND_VERT,
+      fragmentShader: GROUND_FRAG,
+      uniforms: groundUniforms,
+      fog: false,
+    }),
+  );
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.y = GROUND_Y;
+  scene.add(ground);
+
+  /* ---------------------------------------------------------- pipeline -- */
   const curve = new CatmullRomCurve3(ROUTE_POINTS, false, 'catmullrom', 0.4);
-  const pipeGeo = new TubeGeometry(curve, 420, 2.6, 28, false);
-
   const pipeUniforms = {
     uCam: { value: new Vector3() },
-    uSteelDark: { value: new Color(C.steelDark) },
-    uSteelLight: { value: new Color(C.steelLight) },
-    uRust: { value: new Color(0x6b3a17) },
-    uRim: { value: new Color(C.accent) },
-    uCorrosion: { value: 0.08 },
-    uTime: { value: 0 },
+    uSteel: { value: new Color(C.steel) },
+    uSteelLit: { value: new Color(C.steelLit) },
+    uRust: { value: new Color(C.rust) },
+    uHaze: { value: hazeCol },
+    uSun: { value: SUN.clone() },
+    uCorrosion: { value: 0.06 },
+    uFogNear: { value: FOG_NEAR },
+    uFogFar: { value: FOG_FAR },
   };
-  const pipeMat = new ShaderMaterial({
+  const pipeGeo = new TubeGeometry(curve, 520, 3.0, 30, false);
+  const pipe = new Mesh(pipeGeo, new ShaderMaterial({
     vertexShader: PIPE_VERT,
     fragmentShader: PIPE_FRAG,
     uniforms: pipeUniforms,
     fog: false,
     side: DoubleSide,
-  });
-  const pipe = new Mesh(pipeGeo, pipeMat);
+  }));
   scene.add(pipe);
 
-  /* Flanges. Instanced, because forty separate meshes is forty draw calls
-     for what is one piece of repeated hardware. */
-  const FLANGE_N = 26;
-  const flangeGeo = new CylinderGeometry(3.5, 3.5, 1.1, 24, 1, true);
-  const flangeMat = new MeshStandardMaterial({
-    color: C.steelLight, roughness: 0.72, metalness: 0.85, side: DoubleSide,
-  });
-  const flanges = new InstancedMesh(flangeGeo, flangeMat, FLANGE_N);
+  /* Sleeper supports. Instanced — forty separate meshes would be forty draw
+     calls for one piece of repeated hardware. */
+  const SUPPORTS = 40;
+  const supportGeo = new BoxGeometry(2.4, 5.4, 2.4);
+  const supportMat = new MeshStandardMaterial({ color: 0x9a978c, roughness: 0.95 });
+  const supports = new InstancedMesh(supportGeo, supportMat, SUPPORTS);
   {
-    const dummy = new Object3D();
+    const d = new Object3D();
+    for (let i = 0; i < SUPPORTS; i++) {
+      const t = (i + 0.5) / SUPPORTS;
+      const p = curve.getPointAt(t);
+      d.position.set(p.x, (p.y + GROUND_Y) / 2 - 0.6, p.z);
+      d.updateMatrix();
+      supports.setMatrixAt(i, d.matrix);
+    }
+    supports.instanceMatrix.needsUpdate = true;
+  }
+  scene.add(supports);
+
+  /* Flanges at the girth welds. */
+  const FLANGES = 30;
+  const flangeGeo = new CylinderGeometry(3.7, 3.7, 1.0, 22, 1, true);
+  const flangeMat = new MeshStandardMaterial({
+    color: C.steel, roughness: 0.62, metalness: 0.75, side: DoubleSide,
+  });
+  const flanges = new InstancedMesh(flangeGeo, flangeMat, FLANGES);
+  {
+    const d = new Object3D();
     const up = new Vector3(0, 1, 0);
-    for (let i = 0; i < FLANGE_N; i++) {
-      const t = (i + 0.5) / FLANGE_N;
-      const pos = curve.getPointAt(t);
-      const tan = curve.getTangentAt(t).normalize();
-      dummy.position.copy(pos);
-      // The cylinder's axis is +Y; align it with the tube's tangent so the
-      // flange sits square on the pipe rather than skewed through it.
-      dummy.quaternion.setFromUnitVectors(up, tan);
-      dummy.updateMatrix();
-      flanges.setMatrixAt(i, dummy.matrix);
+    for (let i = 0; i < FLANGES; i++) {
+      const t = (i + 0.5) / FLANGES;
+      d.position.copy(curve.getPointAt(t));
+      // The cylinder's axis is +Y; align it to the tube's tangent or the
+      // flange sits skewed through the pipe instead of square on it.
+      d.quaternion.setFromUnitVectors(up, curve.getTangentAt(t).normalize());
+      d.updateMatrix();
+      flanges.setMatrixAt(i, d.matrix);
     }
     flanges.instanceMatrix.needsUpdate = true;
   }
   scene.add(flanges);
 
-  /* ------------------------------------------------------ branch network -- */
-  const network = new Group();
-  network.visible = false;
-  for (const b of BRANCH_DEFS) {
-    const root = curve.getPointAt(b.at);
-    const dir = b.dir.clone().normalize();
-    const pts: Vector3[] = [];
-    for (let i = 0; i <= 6; i++) {
-      const k = i / 6;
-      pts.push(new Vector3(
-        root.x + dir.x * b.len * k + Math.sin(k * 3.1) * 5,
-        root.y + dir.y * b.len * k,
-        root.z + dir.z * b.len * k + Math.cos(k * 2.4) * 5,
-      ));
-    }
-    const bg = new BufferGeometry().setFromPoints(pts);
-    const bm = new LineBasicMaterial({ color: C.accent, transparent: true, opacity: 0.0 });
-    network.add(new Line(bg, bm));
-  }
-  scene.add(network);
+  /* ---------------------------------------------------------- refinery -- */
+  /* Far background, offset well off the corridor so the camera passes it
+     rather than through it. Built from primitives: at this distance and
+     under this much haze, silhouette is all that survives, and a detailed
+     model would be spending polygons on nothing. */
+  const refinery = new Group();
+  refinery.position.set(240, 0, -430);
 
-  /* ------------------------------------------------------------- dust ---- */
-  /* Atmospheric particles. Capped hard: a particle field is the easiest
-     place on a page like this to spend a frame budget with nothing to show
-     for it. */
-  const DUST_N = reduced ? 0 : 1400;
-  const dustGeo = new BufferGeometry();
+  const tankMat = new MeshStandardMaterial({ color: C.tank, roughness: 0.85, metalness: 0.25 });
+  const tankGeo = new CylinderGeometry(15, 15, 17, 18);
+  const tanks = new InstancedMesh(tankGeo, tankMat, 7);
   {
-    const arr = new Float32Array(DUST_N * 3);
-    for (let i = 0; i < DUST_N; i++) {
-      arr[i * 3] = (Math.random() - 0.5) * 340;
-      arr[i * 3 + 1] = (Math.random() - 0.5) * 90;
-      arr[i * 3 + 2] = (Math.random() - 0.5) * 200;
-    }
-    dustGeo.setAttribute('position', new BufferAttribute(arr, 3));
+    const d = new Object3D();
+    const spots: [number, number, number][] = [
+      [-84, 0, 26], [-44, 0, 8], [-6, 0, 30], [34, 0, 6],
+      [74, 0, 28], [112, 0, 4], [150, 0, 24],
+    ];
+    spots.forEach((s, i) => {
+      const h = 0.7 + (i % 3) * 0.22;
+      d.position.set(s[0], GROUND_Y + 8.5 * h, s[2]);
+      d.scale.set(0.8 + (i % 2) * 0.3, h, 0.8 + (i % 2) * 0.3);
+      d.updateMatrix();
+      tanks.setMatrixAt(i, d.matrix);
+    });
+    tanks.instanceMatrix.needsUpdate = true;
   }
-  const dust = new Points(dustGeo, new PointsMaterial({
-    color: C.dust, size: 0.34, transparent: true, opacity: 0.32,
-    depthWrite: false, blending: AdditiveBlending, sizeAttenuation: true,
-  }));
-  if (DUST_N) scene.add(dust);
+  refinery.add(tanks);
 
-  /* ------------------------------------------------------ camera rig ----- */
-  /* The camera runs along its own curve, offset outboard from the pipe, and
-     looks at a point further down the route than it is. That look-ahead is
-     what makes travel feel like travel: aiming at your own position reads
-     as sliding sideways. */
+  const towerMat = new MeshStandardMaterial({ color: 0x7f887f, roughness: 0.9 });
+  const towerGeo = new CylinderGeometry(3.4, 3.4, 60, 12);
+  const towers = new InstancedMesh(towerGeo, towerMat, 9);
+  {
+    const d = new Object3D();
+    for (let i = 0; i < 9; i++) {
+      const h = 0.55 + ((i * 7) % 5) * 0.16;
+      d.position.set(-70 + i * 27, GROUND_Y + 30 * h, -16 + ((i * 5) % 3) * 12);
+      d.scale.set(1, h, 1);
+      d.updateMatrix();
+      towers.setMatrixAt(i, d.matrix);
+    }
+    towers.instanceMatrix.needsUpdate = true;
+  }
+  refinery.add(towers);
+
+  /* The flare stack, and the one lit thing on the horizon. */
+  const stack = new Mesh(
+    new CylinderGeometry(2.4, 3.2, 96, 12),
+    new MeshStandardMaterial({ color: 0x6f776f, roughness: 0.92 }),
+  );
+  stack.position.set(186, GROUND_Y + 48, -30);
+  refinery.add(stack);
+
+  const flameUniforms = { uTime: { value: 0 }, uFlame: { value: new Color(C.flame) } };
+  const flame = new Mesh(
+    new PlaneGeometry(26, 46),
+    new ShaderMaterial({
+      vertexShader: FLAME_VERT,
+      fragmentShader: FLAME_FRAG,
+      uniforms: flameUniforms,
+      transparent: true,
+      depthWrite: false,
+      blending: AdditiveBlending,
+      fog: false,
+      side: DoubleSide,
+    }),
+  );
+  flame.position.set(186, GROUND_Y + 96 + 20, -30);
+  refinery.add(flame);
+  scene.add(refinery);
+
+  /* ------------------------------------------------------- camera rig --- */
+  /* Offset outboard and above the line, looking further down the route than
+     it is. That look-ahead is what makes travel feel like travel — aiming
+     at your own position reads as sliding sideways. */
   const camCurve = new CatmullRomCurve3(
-    ROUTE_POINTS.map((p, i) => new Vector3(
-      p.x, p.y + 6 + (i % 2) * 2, p.z + 16,
-    )), false, 'catmullrom', 0.4,
+    ROUTE_POINTS.map((p, i) => new Vector3(p.x, p.y + 7.5 + (i % 2) * 1.5, p.z + 19)),
+    false, 'catmullrom', 0.4,
   );
 
   let progress = 0;
   let raf = 0;
   let disposed = false;
-  const clock = { t0: performance.now() };
+  const t0 = performance.now();
   const tmpCam = new Vector3();
   const tmpLook = new Vector3();
 
   function layout() {
     const w = Math.max(1, canvas.clientWidth);
     const h = Math.max(1, canvas.clientHeight);
-    // Capped at 1.75: beyond that the pixel count costs more than the
-    // sharpness is worth on a full-screen scene.
+    // Capped: beyond 1.75 the pixel count costs more than the sharpness is
+    // worth on a full-screen scene.
     renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 1.75));
     renderer.setSize(w, h, false);
     camera.aspect = w / h;
@@ -306,56 +490,44 @@ export function create(canvas: HTMLCanvasElement, reduced: boolean): SceneHandle
   }
 
   function apply(p: number, elapsed: number) {
-    // Camera travels the first 70% of the page; the last 30% holds near the
-    // end of the line while the closing sections are read.
-    const travel = Math.min(p / 0.7, 1);
-    const eased = travel * travel * (3 - 2 * travel);   // smoothstep
+    // The camera travels the first 72% of the page; the last stretch holds
+    // near the end of the line while the closing sections are read.
+    const travel = Math.min(p / 0.72, 1);
+    const eased = travel * travel * (3 - 2 * travel);
 
     camCurve.getPointAt(Math.min(eased, 0.999), tmpCam);
-    // Pull back and rise as the story widens from one pipe to a network.
-    const widen = Math.min(Math.max((p - 0.18) / 0.32, 0), 1);
-    camera.position.set(
-      tmpCam.x,
-      tmpCam.y + widen * 38,
-      tmpCam.z + widen * 62,
-    );
+    // Rise and pull out as the story widens from one pipe to a network.
+    const widen = Math.min(Math.max((p - 0.20) / 0.34, 0), 1);
+    camera.position.set(tmpCam.x, tmpCam.y + widen * 30, tmpCam.z + widen * 46);
 
-    curve.getPointAt(Math.min(eased + 0.06, 1), tmpLook);
+    curve.getPointAt(Math.min(eased + 0.055, 1), tmpLook);
+    // Lift the aim toward the horizon as we pull out, so the refinery and
+    // the flare come into frame rather than staying below it.
+    tmpLook.y += widen * 16;
     camera.lookAt(tmpLook);
 
-    // Corrosion climbs through the corrosion chapter and stays high after,
-    // because the pipe does not heal when you scroll past.
-    pipeUniforms.uCorrosion.value = 0.08 + Math.min(Math.max((p - 0.30) / 0.28, 0), 1) * 0.82;
+    // The sky dome rides with the camera; a fixed dome would be escaped.
+    sky.position.copy(camera.position);
+
+    // Corrosion climbs through the corrosion chapter and stays high after —
+    // the pipe does not heal because you scrolled past.
+    pipeUniforms.uCorrosion.value =
+      0.06 + Math.min(Math.max((p - 0.16) / 0.26, 0), 1) * 0.84;
     pipeUniforms.uCam.value.copy(camera.position);
-    pipeUniforms.uTime.value = elapsed;
+    groundUniforms.uCam.value.copy(camera.position);
 
-    // The branches light as the single line becomes a network.
-    const net = Math.min(Math.max((p - 0.16) / 0.22, 0), 1);
-    network.visible = net > 0.01;
-    network.children.forEach((child, i) => {
-      const line = child as Line;
-      const mat = line.material as LineBasicMaterial;
-      // Staggered so they appear in sequence rather than all at once.
-      const k = Math.min(Math.max((net - i * 0.09) / 0.4, 0), 1);
-      mat.opacity = k * 0.62;
-    });
-
-    // Fog closes in for the corrosion chapter, then opens out again.
-    const close = Math.min(Math.max((p - 0.28) / 0.2, 0), 1)
-                * (1 - Math.min(Math.max((p - 0.56) / 0.2, 0), 1));
-    (scene.fog as Fog).near = 40 - close * 26;
-    (scene.fog as Fog).far = 260 - close * 130;
-
-    if (DUST_N && !reduced) {
-      dust.rotation.y = elapsed * 0.006;
-      dust.position.y = Math.sin(elapsed * 0.12) * 1.6;
-    }
+    if (!reduced) flameUniforms.uTime.value = elapsed;
+    // A flare flickers; a steady cone reads as a traffic cone.
+    const flick = reduced ? 1 : 0.9 + Math.sin(elapsed * 7.3) * 0.06
+                                + Math.sin(elapsed * 13.1) * 0.04;
+    flame.scale.set(flick, 0.94 + flick * 0.09, 1);
+    // Billboard it, so it never turns edge-on and vanishes.
+    flame.lookAt(camera.position.x, flame.position.y, camera.position.z);
   }
 
   function frame() {
     if (disposed) return;
-    const elapsed = (performance.now() - clock.t0) / 1000;
-    apply(progress, elapsed);
+    apply(progress, (performance.now() - t0) / 1000);
     renderer.render(scene, camera);
     raf = requestAnimationFrame(frame);
   }
@@ -363,8 +535,6 @@ export function create(canvas: HTMLCanvasElement, reduced: boolean): SceneHandle
   layout();
 
   if (reduced) {
-    // One frame, no loop. The scene is still correct and still shows the
-    // pipeline; it simply does not move on its own.
     apply(0, 0);
     renderer.render(scene, camera);
   } else {
@@ -375,29 +545,20 @@ export function create(canvas: HTMLCanvasElement, reduced: boolean): SceneHandle
     reduced,
     setProgress(p: number) {
       progress = Math.min(Math.max(p, 0), 1);
-      if (reduced) {
-        apply(progress, 0);
-        renderer.render(scene, camera);
-      }
+      if (reduced) { apply(progress, 0); renderer.render(scene, camera); }
     },
     resize() {
       layout();
-      if (reduced) {
-        apply(progress, 0);
-        renderer.render(scene, camera);
-      }
+      if (reduced) { apply(progress, 0); renderer.render(scene, camera); }
     },
     dispose() {
       disposed = true;
       if (raf) cancelAnimationFrame(raf);
-      pipeGeo.dispose();
-      pipeMat.dispose();
-      flangeGeo.dispose();
-      flangeMat.dispose();
-      dustGeo.dispose();
-      network.children.forEach((c) => {
-        (c as Line).geometry.dispose();
-        ((c as Line).material as LineBasicMaterial).dispose();
+      scene.traverse((o) => {
+        const m = o as Mesh;
+        if (m.geometry) m.geometry.dispose();
+        const mat = m.material as MeshStandardMaterial | undefined;
+        if (mat && typeof mat.dispose === 'function') mat.dispose();
       });
       renderer.dispose();
     },

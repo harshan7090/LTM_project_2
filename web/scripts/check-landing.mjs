@@ -15,9 +15,14 @@ const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
 const htmlClasses = new Set(
   [...html.matchAll(/\bclass="([^"]+)"/g)].flatMap((m) => m[1].split(/\s+/)).filter(Boolean),
 );
-// classes the script adds at runtime
+// Classes the script creates at runtime. Both spellings: classList.add,
+// and className assignment on an element built with createElement - missing
+// the second reported every odometer class as an orphaned CSS rule.
 for (const c of [...ts.matchAll(/classList\.(?:add|toggle|remove)\('([^']+)'/g)]) {
   htmlClasses.add(c[1]);
+}
+for (const c of [...ts.matchAll(/\.className\s*=\s*'([^']+)'/g)]) {
+  c[1].split(/\s+/).filter(Boolean).forEach((x) => htmlClasses.add(x));
 }
 for (const c of ['on', 'done', 'scrolled', 'gl-on', 'no-js', 'neg', 'center', 'tight']) {
   htmlClasses.add(c);

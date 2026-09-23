@@ -172,30 +172,90 @@ function wireChapters() {
 
 /* -------------------------------------------------------- counters ------ */
 
+/* Mechanical counters.
+ *
+ * Each digit is a column of 0-9 behind a one-digit window; the column
+ * slides to bring the right numeral into view. A plain count-up only
+ * changes text, which reads as a number being set. This reads as an
+ * instrument settling, which is the right register for a page about
+ * infrastructure — and it is where the "running numbers" feel comes from.
+ *
+ * Higher-order digits are given a longer travel and land later, so the
+ * figure resolves left to right the way a real odometer does rather than
+ * every wheel stopping at once.
+ */
+function buildOdometer(el: HTMLElement, text: string): HTMLElement[] {
+  el.textContent = '';
+  const wrap = doc.createElement('span');
+  wrap.className = 'od';
+  const cols: HTMLElement[] = [];
+
+  for (const ch of text) {
+    if (ch >= '0' && ch <= '9') {
+      const win = doc.createElement('span');
+      win.className = 'od-d';
+      const col = doc.createElement('span');
+      col.className = 'od-col';
+      // 0-9 then 0 again, so a wheel can always roll forwards into place
+      // instead of snapping backwards past eight digits.
+      for (let d = 0; d <= 10; d++) {
+        const cell = doc.createElement('span');
+        cell.textContent = String(d % 10);
+        col.appendChild(cell);
+      }
+      win.appendChild(col);
+      wrap.appendChild(win);
+      cols.push(col);
+      col.dataset.target = ch;
+    } else {
+      // Separators and decimal points do not spin.
+      const sep = doc.createElement('span');
+      sep.className = 'od-sep';
+      sep.textContent = ch;
+      wrap.appendChild(sep);
+    }
+  }
+  el.appendChild(wrap);
+  return cols;
+}
+
 function wireCounters() {
   const els = gsap.utils.toArray<HTMLElement>('[data-count]');
+
   els.forEach((el) => {
     const to = parseFloat(el.dataset.count ?? '0');
     const dp = parseInt(el.dataset.decimals ?? '0', 10);
-    const render = (v: number) => {
-      el.textContent = dp ? v.toFixed(dp) : Math.round(v).toLocaleString();
-    };
+    const finalText = dp ? to.toFixed(dp) : Math.round(to).toLocaleString();
 
-    if (reduced) { render(to); return; }
+    if (reduced) { el.textContent = finalText; return; }
 
-    const state = { v: 0 };
-    render(0);
+    const cols = buildOdometer(el, finalText);
+    if (!cols.length) { el.textContent = finalText; return; }
+
     ScrollTrigger.create({
       trigger: el,
-      start: 'top 82%',
+      start: 'top 84%',
       once: true,
       onEnter: () => {
-        gsap.to(state, {
-          v: to,
-          duration: 1.5,
-          // Quick, then settling — an instrument coming to rest.
-          ease: 'expo.out',
-          onUpdate: () => render(state.v),
+        cols.forEach((col, i) => {
+          const digit = parseInt(col.dataset.target ?? '0', 10);
+          // Each cell is exactly 1em tall, so the offset is in em and the
+          // maths does not depend on the rendered font size.
+          const rest = -digit;
+          // Leading digits spin further and settle later.
+          const depth = (cols.length - i) / cols.length;
+          gsap.fromTo(
+            col,
+            { y: `${-(digit + 10 + Math.round(depth * 20))}em` },
+            {
+              y: `${rest}em`,
+              duration: 1.5 + depth * 0.9,
+              // Quick, then settling — a wheel coming to rest against its
+              // detent, not a linear slide.
+              ease: 'power4.out',
+              delay: i * 0.055,
+            },
+          );
         });
       },
     });
