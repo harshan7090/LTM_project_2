@@ -89,6 +89,18 @@ export const api = {
   mapRoutes: () =>
     get<{ routes: PipelineRoute[] }>('/api/map/routes').then((r) => r.routes),
   mapConfig: () => get<MapConfig>('/api/map/config'),
+
+  /** One map tile as an object URL.
+   *
+   *  The tile route is authenticated, and an <img src> cannot carry a
+   *  bearer token — so the bytes are fetched here, where the header can be
+   *  attached, and handed back as a blob URL the caller assigns to an
+   *  Image. The caller owns revoking it. */
+  async mapTile(key: string): Promise<string> {
+    const res = await fetch(`/api/map/tile/${key}.png`, { headers: headers() });
+    if (!res.ok) await toError(res);
+    return URL.createObjectURL(await res.blob());
+  },
   history: (id: string) =>
     get<SegmentHistory>(`/api/segments/${encodeURIComponent(id)}/history`),
 

@@ -28,18 +28,36 @@
  *   which is not a projection at all — the country changed shape as you
  *   clicked around.
  *
- * TILES
+ * TILES, AND WHY THEY WERE ALL FAILING
  *
- *   Fetched from this origin (/api/map/tile/...), which the backend relays
- *   to Geoapify or OSM. The key stays server-side and the CSP keeps
- *   img-src 'self'. If tiles fail the vector outline underneath is drawn
- *   instead, so the panel is never an empty grey box.
+ *   Tiles come from this origin (/api/map/tile/...), which the backend
+ *   relays upstream with the API key attached, so the key never reaches the
+ *   browser and the CSP keeps img-src 'self'.
+ *
+ *   That route requires a bearer token — and an <img src> cannot send one.
+ *   Every tile returned 401, the fallback dutifully drew the vector
+ *   outline, and the map looked like it was working as designed. The
+ *   fallback was hiding the bug.
+ *
+ *   So tiles are fetched with `fetch` (which CAN carry the header) and
+ *   handed to an Image as an object URL. Those URLs are revoked on unmount;
+ *   a tile cache of un-revoked blobs is a memory leak that only shows up
+ *   after a long session.
+ *
+ * ZOOM
+ *
+ *   The view is no longer a fixed fit. Wheel, buttons and drag change zoom
+ *   and centre, and `fit()` returns to the whole country. Wheel zoom only
+ *   acts when the pointer is over the canvas and calls preventDefault
+ *   there, so the page still scrolls normally everywhere else.
  */
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
+import { api } from '../lib/api';
 import { LAND } from '../lib/basemap';
 import type { MapConfig, PipelineRoute, Segment } from '../lib/types';
 import { BAND_COLOR, toBand } from './fleet';
+import { cx } from './ui';
 
 /* ========================================================== projection == */
 
@@ -49,6 +67,21 @@ import { BAND_COLOR, toBand } from './fleet';
 const BBOX = { lonMin: 67.0, lonMax: 98.5, latMin: 6.0, latMax: 36.8 };
 
 const TILE = 256;
+
+/* Matches the backend's tile pyramid guard. Asking for a level it refuses
+   just produces a 502 per tile and an empty map. */
+const MIN_TILE_Z = 3;
+const MAX_TILE_Z = 10;
+
+/* How far the user may zoom, as fractional levels beyond the country fit.
+   Capped because past this the segments are the same dots further apart. */
+const MAX_ZOOM_IN = 4.5;
+
+/* Geographic centre of the view box, used as the default camera target. */
+const BBOX_CENTRE: [number, number] = [
+  (BBOX.latMin + BBOX.latMax) / 2,
+  (BBOX.lonMin + BBOX.lonMax) / 2,
+];
 
 function mercX(lon: number, world: number): number {
   return ((lon + 180) / 360) * world;
@@ -68,40 +101,53 @@ interface View {
   h: number;
 }
 
-/** Fit the bbox to the canvas.
- *
- *  Snapping to an integer zoom, which is the obvious implementation, wastes
- *  most of the panel: India is nearly square in Mercator, so in a wide slot
- *  the largest level that still fits vertically leaves it filling about 40%
- *  of the width. Real map libraries avoid this with fractional zoom —
- *  tiles are fetched at the nearest integer level and drawn scaled — and
- *  that is what `scale` is. It keeps tiles close to native resolution while
- *  the drawing fills the box exactly. */
-function fitView(w: number, h: number, minZoom: number, maxZoom: number): View {
+/** The whole-country fractional zoom that exactly fills the canvas. */
+function fitZoom(w: number, h: number): number {
   const lonFrac = (BBOX.lonMax - BBOX.lonMin) / 360;
   const latFrac = mercY(BBOX.latMin, 1) - mercY(BBOX.latMax, 1);
-  const ideal = Math.min(
+  return Math.min(
     Math.log2(w / (TILE * lonFrac)),
     Math.log2(h / (TILE * latFrac)),
   );
-  const zoom = Math.max(minZoom, Math.min(maxZoom, Math.round(ideal)));
+}
 
+/** Build a view from a FRACTIONAL zoom and a geographic centre.
+ *
+ *  Zoom is fractional on purpose. Snapping to integers is the obvious
+ *  implementation and wastes most of the panel — India is nearly square in
+ *  Mercator, so in a wide slot the largest integer level that still fits
+ *  vertically leaves it filling about 40% of the width. Real map libraries
+ *  solve this the same way: fetch tiles at the nearest INTEGER level and
+ *  draw them scaled by the fractional remainder, which keeps tiles close to
+ *  native resolution while the drawing fills the box exactly. */
+function makeView(
+  w: number, h: number, fracZoom: number, centre: [number, number],
+): View {
+  const zoom = Math.max(MIN_TILE_Z, Math.min(MAX_TILE_Z, Math.round(fracZoom)));
   const world = TILE * 2 ** zoom;
-  const sx = mercX(BBOX.lonMax, world) - mercX(BBOX.lonMin, world);
-  const sy = mercY(BBOX.latMin, world) - mercY(BBOX.latMax, world);
-  const scale = Math.min(w / sx, h / sy);
+  const scale = 2 ** (fracZoom - zoom);
 
+  // World-pixel coordinate of the canvas's top-left corner.
+  const cx = mercX(centre[1], world);
+  const cy = mercY(centre[0], world);
   return {
-    zoom,
-    world,
-    scale,
-    // Centre the bbox: offsets are in world px, so the canvas covers
-    // w/scale of them.
-    offX: mercX(BBOX.lonMin, world) - (w / scale - sx) / 2,
-    offY: mercY(BBOX.latMax, world) - (h / scale - sy) / 2,
-    w,
-    h,
+    zoom, world, scale,
+    offX: cx - w / scale / 2,
+    offY: cy - h / scale / 2,
+    w, h,
   };
+}
+
+/** Canvas pixel back to [lat, lon] — needed so a wheel zoom can keep the
+ *  point under the cursor fixed, which is what makes zooming feel anchored
+ *  rather than like the map jumping. */
+function toLatLon(px: number, py: number, v: View): [number, number] {
+  const wx = v.offX + px / v.scale;
+  const wy = v.offY + py / v.scale;
+  const lon = (wx / v.world) * 360 - 180;
+  const n = Math.PI - (2 * Math.PI * wy) / v.world;
+  const lat = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
+  return [lat, lon];
 }
 
 function toPx(lat: number, lon: number, v: View): [number, number] {
@@ -153,6 +199,15 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
   const tileCache = useRef(new Map<string, HTMLImageElement>());
   const [tileTick, setTileTick] = useState(0);
 
+  /* Object URLs behind those images. They must be revoked, or every tile
+     ever fetched stays resident for the life of the document — a leak that
+     only shows up after a long session with a lot of panning. */
+  const blobUrls = useRef(new Set<string>());
+  useEffect(() => () => {
+    blobUrls.current.forEach((u) => URL.revokeObjectURL(u));
+    blobUrls.current.clear();
+  }, []);
+
   /* --------------------------------------------------------- sizing --- */
   useEffect(() => {
     const el = wrapRef.current;
@@ -165,12 +220,95 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
     return () => ro.disconnect();
   }, []);
 
-  const view = useMemo(
-    () => (size.w && size.h
-      ? fitView(size.w, size.h, config?.min_zoom ?? 3, config?.max_zoom ?? 10)
-      : null),
-    [size.w, size.h, config?.min_zoom, config?.max_zoom],
+  /* The camera. `null` zoom means "not yet positioned" — it resolves to the
+     whole-country fit as soon as the panel has a size, and after that the
+     user owns it. Storing the fit itself would mean a resize silently
+     throwing away wherever they had panned to. */
+  const [cam, setCam] = useState<{ zoom: number; centre: [number, number] } | null>(null);
+
+  const fitZ = useMemo(
+    () => (size.w && size.h ? fitZoom(size.w, size.h) : 0),
+    [size.w, size.h],
   );
+
+  const view = useMemo(() => {
+    if (!size.w || !size.h) return null;
+    const z = cam ? cam.zoom : fitZ;
+    const c = cam ? cam.centre : BBOX_CENTRE;
+    return makeView(size.w, size.h, z, c);
+  }, [size.w, size.h, cam, fitZ]);
+
+  /* ---------------------------------------------------------- zooming -- */
+  const clampZoom = useCallback(
+    (z: number) => Math.max(fitZ - 0.35, Math.min(fitZ + MAX_ZOOM_IN, z)),
+    [fitZ],
+  );
+
+  /** Zoom about a canvas point, keeping whatever is under it fixed. Zooming
+   *  about the centre instead makes the map lurch away from what the user
+   *  was aiming at. */
+  const zoomAbout = useCallback((delta: number, px?: number, py?: number) => {
+    setCam((prev) => {
+      if (!size.w || !size.h) return prev;
+      const curZ = prev ? prev.zoom : fitZ;
+      const curC = prev ? prev.centre : BBOX_CENTRE;
+      const nextZ = clampZoom(curZ + delta);
+      if (nextZ === curZ) return prev;
+      if (px === undefined || py === undefined) {
+        return { zoom: nextZ, centre: curC };
+      }
+      const before = makeView(size.w, size.h, curZ, curC);
+      const anchor = toLatLon(px, py, before);
+      const after = makeView(size.w, size.h, nextZ, curC);
+      const moved = toLatLon(px, py, after);
+      return {
+        zoom: nextZ,
+        centre: [
+          curC[0] + (anchor[0] - moved[0]),
+          curC[1] + (anchor[1] - moved[1]),
+        ],
+      };
+    });
+  }, [size.w, size.h, fitZ, clampZoom]);
+
+  const resetView = useCallback(() => setCam(null), []);
+
+  /* Wheel zoom, attached natively so it can be non-passive. React's onWheel
+     is passive in modern browsers, so preventDefault there is ignored and
+     the page scrolls behind the map. */
+  useEffect(() => {
+    const el = wrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      zoomAbout(-e.deltaY * 0.0022, e.clientX - r.left, e.clientY - r.top);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [zoomAbout]);
+
+  /* ---------------------------------------------------------- panning -- */
+  const drag = useRef<{ x: number; y: number; centre: [number, number] } | null>(null);
+  const [dragging, setDragging] = useState(false);
+
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (!view) return;
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = {
+      x: e.clientX, y: e.clientY,
+      centre: cam ? cam.centre : BBOX_CENTRE,
+    };
+    setDragging(true);
+  }, [view, cam]);
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    drag.current = null;
+    setDragging(false);
+  }, []);
 
   /* ---------------------------------------------------- projected pts -- */
   const pts = useMemo(() => {
@@ -206,27 +344,41 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
     let failures = 0;
     let requested = 0;
 
+    const wanted: string[] = [];
     for (let ty = y0; ty <= y1; ty++) {
       for (let tx = x0; tx <= x1; tx++) {
         if (ty < 0 || ty >= span) continue;
         const wx = ((tx % span) + span) % span;   // wrap, so no 502 at the edge
         const key = `${zoom}/${wx}/${ty}`;
         if (tileCache.current.has(key)) continue;
-        requested += 1;
-        const img = new Image();
-        tileCache.current.set(key, img);
-        img.onload = () => { if (!cancelled) setTileTick((t) => t + 1); };
-        img.onerror = () => {
+        wanted.push(key);
+      }
+    }
+
+    for (const key of wanted) {
+      requested += 1;
+      const img = new Image();
+      tileCache.current.set(key, img);
+
+      // fetch, NOT img.src. The tile route is authenticated and an <img>
+      // cannot send an Authorization header — every request came back 401,
+      // and the vector fallback quietly covered for it.
+      api.mapTile(key)
+        .then((url) => {
+          if (cancelled) { URL.revokeObjectURL(url); return; }
+          blobUrls.current.add(url);
+          img.onload = () => { if (!cancelled) setTileTick((t) => t + 1); };
+          img.src = url;
+        })
+        .catch(() => {
           tileCache.current.delete(key);
           failures += 1;
-          // One dead tile is a gap; all of them means the provider is not
-          // working and the vector outline is the honest fallback.
+          // One dead tile is a gap. All of them means the provider is not
+          // working, and the vector outline is the honest answer.
           if (!cancelled && requested > 0 && failures >= requested) {
             setTilesFailed(true);
           }
-        };
-        img.src = `/api/map/tile/${zoom}/${wx}/${ty}.png`;
-      }
+        });
     }
     return () => { cancelled = true; };
   }, [view, config?.available, tilesFailed]);
@@ -415,16 +567,38 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
     [view, index, pts],
   );
 
+  const moved = useRef(0);
+
   const onMove = useCallback(
     (ev: React.MouseEvent<HTMLCanvasElement>) => {
+      const d = drag.current;
+      if (d && view) {
+        // Pan in GEOGRAPHIC space, from the centre the drag started at, so
+        // the map cannot creep from accumulated rounding over a long drag.
+        const dx = ev.clientX - d.x;
+        const dy = ev.clientY - d.y;
+        moved.current = Math.max(moved.current, Math.hypot(dx, dy));
+        // The content follows the pointer, so the point that should end up
+        // at the centre is the one currently (dx, dy) BEHIND it. Measured
+        // from the view the drag started in, so a long drag cannot creep
+        // from accumulated rounding.
+        const start = makeView(view.w, view.h, cam ? cam.zoom : fitZ, d.centre);
+        const centre = toLatLon(view.w / 2 - dx, view.h / 2 - dy, start);
+        setCam({ zoom: cam ? cam.zoom : fitZ, centre });
+        return;
+      }
       const found = hitTest(ev);
       setHover((prev) => (prev?.segment_id === found?.segment_id ? prev : found));
     },
-    [hitTest],
+    [hitTest, view, cam, fitZ],
   );
 
   const onClick = useCallback(
     (ev: React.MouseEvent<HTMLCanvasElement>) => {
+      // A drag ends in a click event. Selecting a segment because the user
+      // finished panning over one would be maddening.
+      if (moved.current > 4) { moved.current = 0; return; }
+      moved.current = 0;
       const found = hitTest(ev);
       if (found) onPick(found.segment_id);
     },
@@ -442,13 +616,53 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
         <canvas ref={baseRef} className="absolute inset-0 h-full w-full" />
         <canvas
           ref={overRef}
-          className="absolute inset-0 h-full w-full cursor-crosshair"
+          className={cx('absolute inset-0 h-full w-full',
+                        dragging ? 'cursor-grabbing' : 'cursor-crosshair')}
           onMouseMove={onMove}
-          onMouseLeave={() => setHover(null)}
+          onMouseLeave={() => { setHover(null); }}
           onClick={onClick}
+          onPointerDown={onPointerDown}
+          onPointerUp={onPointerUp}
+          onPointerCancel={onPointerUp}
           role="img"
           aria-label={`${pts.length} pipeline segments on ${routes.length} corridors across India`}
         />
+
+        {/* Zoom controls. Buttons as well as the wheel, because a wheel is
+            not available to a keyboard user and is awkward on a trackpad
+            over a scrolling page. */}
+        <div className="absolute right-2 top-2 flex flex-col border border-line-soft
+                        bg-panel/92">
+          <MapBtn label="Zoom in" onClick={() => zoomAbout(0.7)}
+                  disabled={!!view && cam !== null && cam.zoom >= fitZ + MAX_ZOOM_IN - 0.01}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M12 5v14M5 12h14" />
+            </svg>
+          </MapBtn>
+          <MapBtn label="Zoom out" onClick={() => zoomAbout(-0.7)}
+                  disabled={!cam || cam.zoom <= fitZ - 0.34}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
+              <path d="M5 12h14" />
+            </svg>
+          </MapBtn>
+          <MapBtn label="Fit to India" onClick={resetView} disabled={!cam}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" strokeWidth="2" aria-hidden="true">
+              <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
+            </svg>
+          </MapBtn>
+        </div>
+
+        {cam && (
+          <div className="pointer-events-none absolute left-2 top-2 border
+                          border-line-soft bg-panel/92 px-2 py-[3px]">
+            <span className="num text-[10px] text-dim">
+              z{(cam.zoom - fitZ + 1).toFixed(1)}×
+            </span>
+          </div>
+        )}
       </div>
 
       {/* Readout pinned below rather than following the cursor: a floating
@@ -475,7 +689,7 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
           <>
             <span className="text-dim">
               {pts.length.toLocaleString()} segments · {routes.length} corridors ·
-              marker size is risk · ring marks an HCA
+              scroll to zoom, drag to pan
             </span>
             <div className="flex-1" />
             <span className="text-dim" style={{ fontSize: 9.5 }}>
@@ -494,3 +708,31 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
  * on every hover in the risk matrix; without this the map would repaint
  * with it, which is the lag this component was rewritten to remove. */
 export const PipelineMap = memo(PipelineMapInner);
+
+/** A control on the map surface. Square, 26px, with a real title so the
+ *  icon is not the only affordance. */
+function MapBtn({
+  label, onClick, disabled, children,
+}: {
+  label: string;
+  onClick: () => void;
+  disabled?: boolean;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={disabled}
+      title={label}
+      aria-label={label}
+      className="grid h-[26px] w-[26px] place-items-center border-b border-line-soft
+                 text-muted transition-colors last:border-b-0
+                 hover:bg-raised hover:text-accent
+                 disabled:cursor-not-allowed disabled:opacity-35 disabled:hover:bg-transparent
+                 disabled:hover:text-muted"
+    >
+      {children}
+    </button>
+  );
+}
