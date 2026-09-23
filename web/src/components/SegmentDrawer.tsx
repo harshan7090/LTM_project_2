@@ -174,7 +174,8 @@ export default function SegmentDrawer({
                   <div className="flex items-center gap-3 border-t border-line-soft px-2.5 py-1.5">
                     <span className="label" style={{ fontSize: 8 }}>Surface</span>
                     <span className="text-[10px] text-dim">
-                      Pitting scaled to predicted rate · illustrative, not an inspection image
+                      Pitting scaled to predicted rate · drag or arrow keys to rotate ·
+                      illustrative, not an inspection image
                     </span>
                   </div>
                 </div>

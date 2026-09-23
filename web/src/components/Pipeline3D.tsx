@@ -1,31 +1,41 @@
-/* A pipe segment, drawn in 3D from its own measurements.
+/* A pipe segment, drawn in 3D from its own measurements — and orbitable.
  *
  * WHY PROCEDURAL AND NOT A TEXTURE
  *
  *   A downloaded rusted-metal texture looks better in isolation and is
  *   useless here, because it shows the same corrosion on every segment. The
- *   point of this component is that the pitting density, the wall thickness
- *   and the colour are all functions of THIS segment's values — a 4.2 mpy
- *   segment must visibly differ from a 0.6 mpy one, or the visual is
- *   decoration pretending to be data.
+ *   point of this component is that pitting density, wall thickness and the
+ *   accent are functions of THIS segment's values — a 4.2 mpy segment must
+ *   visibly differ from a 0.6 mpy one, or the visual is decoration
+ *   pretending to be data.
+ *
+ * WHY THE FIRST VERSION LOOKED LIKE A GREEN BLOB
+ *
+ *   Three faults compounding:
+ *
+ *     1. The steel base was dark AND green-biased (0.118–0.290, green
+ *        channel highest), so the body had almost no range to light.
+ *     2. The risk-band colour was applied by a fresnel term over the whole
+ *        silhouette. A cylinder seen side-on is nearly all grazing angle,
+ *        so "rim light" became "paint the entire pipe green".
+ *     3. There was no specular term, so nothing read as metal at all.
+ *
+ *   Now: neutral steel with real range, a tight specular highlight, and the
+ *   band colour reduced to a narrow edge that reinforces the status without
+ *   becoming the subject. The absence of pits on a low-rate segment was
+ *   never a fault — that is the component working.
  *
  * WHY NO 3D LIBRARY
  *
- *   The console sends `script-src 'self'`, so everything is bundled from
- *   this origin anyway. three.js would add ~150 KB gzipped to render one
- *   cylinder with two lights. The shader below is the same approach already
- *   proven on the landing hero.
- *
- * FAILURE
- *
- *   Every exit path is clean. No WebGL, a refused context, a shader that
- *   will not compile — the canvas is replaced by a labelled 2D section
- *   drawing carrying the same numbers. A panel that cannot render must
- *   never become a hole.
+ *   The console sends `script-src 'self'`, so everything bundles from this
+ *   origin anyway, and three.js would add ~150 KB gzipped to draw one
+ *   cylinder with two lights.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { RotateCcw } from 'lucide-react';
 
 import type { RiskBand } from '../lib/types';
+import { cx } from './ui';
 
 /* ============================================================== shaders == */
 
@@ -33,16 +43,15 @@ const VERT = `
 attribute vec3 aPos;
 attribute vec3 aNormal;
 attribute vec2 aUv;
-uniform mat4 uProj, uView, uModel;
+uniform mat4 uProj, uView;
 uniform mat3 uNormalMat;
 varying vec3 vNormal, vWorld;
 varying vec2 vUv;
 void main() {
-  vec4 w = uModel * vec4(aPos, 1.0);
-  vWorld = w.xyz;
+  vWorld = aPos;
   vNormal = uNormalMat * aNormal;
   vUv = aUv;
-  gl_Position = uProj * uView * w;
+  gl_Position = uProj * uView * vec4(aPos, 1.0);
 }`;
 
 const FRAG = `
@@ -72,30 +81,40 @@ float fbm(vec2 p){
 void main() {
   vec3 N = normalize(vNormal) * (uFlip > 0.5 ? -1.0 : 1.0);
   vec3 V = normalize(uCam - vWorld);
-  vec3 L = normalize(vec3(-0.42, 0.84, 0.36));
-  float diff = max(dot(N, L), 0.0);
-  float fres = pow(1.0 - max(dot(N, V), 0.0), 3.0);
+  // Key from over the viewer's shoulder, fill from below-left. Two lights,
+  // because one leaves the shaded half of a cylinder flat black.
+  vec3 L1 = normalize(vec3(-0.35, 0.78, 0.52));
+  vec3 L2 = normalize(vec3(0.62, -0.28, 0.34));
 
-  vec2 sp = vec2(vUv.x * 40.0, vUv.y * 15.0);
+  float d1 = max(dot(N, L1), 0.0);
+  float d2 = max(dot(N, L2), 0.0);
+  float spec = pow(max(dot(reflect(-L1, N), V), 0.0), 42.0);
+  float fres = pow(1.0 - max(dot(N, V), 0.0), 4.0);
+
+  vec2 sp = vec2(vUv.x * 44.0, vUv.y * 15.0);
   float grain = fbm(sp * 1.7);
 
-  // The threshold falls as corrosion rises, so the SAME noise field grows
-  // more pitted rather than reshuffling into a different pattern. Two
-  // segments with similar rates therefore look similar, which is the
-  // property that makes the visual readable as data.
+  // The threshold falls as corrosion rises, so the SAME field grows more
+  // pitted rather than reshuffling. Two segments with similar rates
+  // therefore look similar, which is what makes the visual readable.
   float thresh = mix(0.88, 0.46, clamp(uCorrosion, 0.0, 1.0));
   float pit = smoothstep(thresh, thresh + 0.09, fbm(sp * 3.1 + 11.0));
   float weld = smoothstep(0.972, 0.996, abs(sin(vUv.x * 3.14159 * 5.0)));
 
-  vec3 steel = mix(vec3(0.118, 0.137, 0.129), vec3(0.290, 0.325, 0.306), grain);
-  vec3 rust  = mix(vec3(0.322, 0.153, 0.063), vec3(0.545, 0.259, 0.078), grain);
+  // Neutral steel with real range. The previous base was dark and
+  // green-biased, which left nothing for the light to do.
+  vec3 steel = mix(vec3(0.34, 0.36, 0.35), vec3(0.72, 0.75, 0.73), grain);
+  vec3 rust  = mix(vec3(0.36, 0.18, 0.07), vec3(0.62, 0.32, 0.11), grain);
   vec3 col = mix(steel, rust, pit * 0.92);
-  col = mix(col, vec3(0.38, 0.42, 0.40), weld * 0.5);
-  col *= 0.28 + 0.82 * diff;
-  // Rim light in the segment's own risk colour: the band is already
-  // encoded by a label and a lamp elsewhere, so this reinforces, never
-  // carries, the meaning.
-  col += uBand * fres * 0.30 * (1.0 - pit * 0.7);
+  col = mix(col, vec3(0.80, 0.83, 0.80), weld * 0.35);
+
+  col *= 0.30 + 0.72 * d1 + 0.22 * d2;
+  // Tight highlight: this is what makes it read as metal rather than as a
+  // painted tube. Pits are matte, so they do not take it.
+  col += vec3(1.0, 0.97, 0.90) * spec * (1.0 - pit * 0.9) * 0.9;
+  // The band colour is a NARROW edge, not a wash. pow(...,4) plus a small
+  // weight keeps it on the silhouette instead of over the whole body.
+  col += uBand * fres * 0.16;
 
   gl_FragColor = vec4(col, uAlpha);
 }`;
@@ -139,10 +158,15 @@ const perspective = (fovy: number, aspect: number, near: number, far: number) =>
   ]);
 };
 
-const lookAt = (eye: number[], at: number[]) => {
+/** General look-at with an explicit up vector. The earlier version assumed
+ *  the camera never left the XZ plane; an orbit that can be tilted needs
+ *  the real cross products. */
+function lookAt(eye: number[], at: number[], up: number[]) {
   let zx = eye[0] - at[0], zy = eye[1] - at[1], zz = eye[2] - at[2];
   const zl = Math.hypot(zx, zy, zz) || 1; zx /= zl; zy /= zl; zz /= zl;
-  let xx = zz, xy = 0, xz = -zx;
+  let xx = up[1] * zz - up[2] * zy;
+  let xy = up[2] * zx - up[0] * zz;
+  let xz = up[0] * zy - up[1] * zx;
   const xl = Math.hypot(xx, xy, xz) || 1; xx /= xl; xy /= xl; xz /= xl;
   const yx = zy * xz - zz * xy, yy = zz * xx - zx * xz, yz = zx * xy - zy * xx;
   return new Float32Array([
@@ -151,14 +175,7 @@ const lookAt = (eye: number[], at: number[]) => {
     -(yx * eye[0] + yy * eye[1] + yz * eye[2]),
     -(zx * eye[0] + zy * eye[1] + zz * eye[2]), 1,
   ]);
-};
-
-const rotYZ = (ay: number, az: number) => {
-  const cy = Math.cos(ay), sy = Math.sin(ay), cz = Math.cos(az), sz = Math.sin(az);
-  return new Float32Array([
-    cy * cz, sz, -sy * cz, 0, -cy * sz, cz, sy * sz, 0, sy, 0, cy, 0, 0, 0, 0, 1,
-  ]);
-};
+}
 
 /* ============================================================ component == */
 
@@ -168,27 +185,117 @@ const BAND_RGB: Record<RiskBand, [number, number, number]> = {
   normal: [0.494, 0.651, 0.290],
 };
 
-/** Corrosion rate in mpy, mapped to the shader's 0..1 pitting parameter.
+/** Corrosion rate in mpy mapped to the shader's 0..1 pitting parameter.
  *  4 mpy is a severe external-corrosion rate, so it anchors the top. */
 const RATE_CEILING_MPY = 4.0;
+
+/* Orbit limits. Elevation is clamped short of the poles: at exactly
+   vertical the up vector and the view direction are parallel and the
+   look-at basis collapses. */
+const EL_LIMIT = 1.25;
+const DIST_MIN = 3.4;
+const DIST_MAX = 9.0;
+const HOME = { az: 0.42, el: 0.26, dist: 5.4 };
 
 interface Props {
   corrosionRate: number;
   wallThicknessMm?: number;
   riskBand: RiskBand;
-  /** Pause rotation. Also honoured automatically under reduced motion. */
-  still?: boolean;
   height?: number;
 }
 
 export function Pipeline3D({
-  corrosionRate, wallThicknessMm, riskBand, still = false, height = 128,
+  corrosionRate, wallThicknessMm, riskBand, height = 132,
 }: Props) {
-  const ref = useRef<HTMLCanvasElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const [failed, setFailed] = useState(false);
+  const [touched, setTouched] = useState(false);
+  const [dragging, setDragging] = useState(false);
 
+  // The camera lives in a ref, not state: it changes every pointer move and
+  // every idle frame, and re-rendering the tree at that rate would be
+  // wasteful for something only the canvas reads.
+  const orbit = useRef({ ...HOME });
+  const drag = useRef<{ x: number; y: number; az: number; el: number } | null>(null);
+  const interacted = useRef(false);
+
+  const reset = useCallback(() => {
+    orbit.current = { ...HOME };
+    interacted.current = false;
+    setTouched(false);
+  }, []);
+
+  /* ------------------------------------------------------------- input -- */
+  const onPointerDown = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    drag.current = {
+      x: e.clientX, y: e.clientY,
+      az: orbit.current.az, el: orbit.current.el,
+    };
+    interacted.current = true;
+    setTouched(true);
+    setDragging(true);
+  }, []);
+
+  const onPointerMove = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    const d = drag.current;
+    if (!d) return;
+    // Measured from where the drag started, so a long drag cannot drift
+    // from accumulated per-frame rounding.
+    orbit.current.az = d.az + (e.clientX - d.x) * 0.0105;
+    orbit.current.el = Math.max(-EL_LIMIT, Math.min(EL_LIMIT,
+      d.el + (e.clientY - d.y) * 0.0085));
+  }, []);
+
+  const onPointerUp = useCallback((e: React.PointerEvent<HTMLCanvasElement>) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    }
+    drag.current = null;
+    setDragging(false);
+  }, []);
+
+  /* Keyboard orbit. A control that only works with a pointer is not a
+     control for everyone. */
+  const onKeyDown = useCallback((e: React.KeyboardEvent<HTMLCanvasElement>) => {
+    const step = e.shiftKey ? 0.32 : 0.12;
+    let handled = true;
+    switch (e.key) {
+      case 'ArrowLeft': orbit.current.az -= step; break;
+      case 'ArrowRight': orbit.current.az += step; break;
+      case 'ArrowUp':
+        orbit.current.el = Math.min(EL_LIMIT, orbit.current.el + step); break;
+      case 'ArrowDown':
+        orbit.current.el = Math.max(-EL_LIMIT, orbit.current.el - step); break;
+      case 'Home': reset(); break;
+      default: handled = false;
+    }
+    if (handled) {
+      e.preventDefault();
+      if (e.key !== 'Home') { interacted.current = true; setTouched(true); }
+    }
+  }, [reset]);
+
+  /* Wheel, attached natively so it can be non-passive — React's onWheel is
+     passive, so preventDefault there is ignored and the panel scrolls
+     behind the model. */
   useEffect(() => {
-    const canvas = ref.current;
+    const el = canvasRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      orbit.current.dist = Math.max(DIST_MIN, Math.min(DIST_MAX,
+        orbit.current.dist + e.deltaY * 0.0042));
+      interacted.current = true;
+      setTouched(true);
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, []);
+
+  /* ------------------------------------------------------------- render -- */
+  useEffect(() => {
+    const canvas = canvasRef.current;
     if (!canvas) return;
 
     const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -214,12 +321,11 @@ export function Pipeline3D({
     if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) { setFailed(true); return; }
     gl.useProgram(prog);
 
-    // Wall thickness scales the drawn radius a little, so a thin-walled
-    // segment reads as slighter. Clamped: this is an indication of
-    // proportion, not a scale drawing.
+    // Wall thickness nudges the drawn radius, so a thin-walled segment reads
+    // as slighter. Clamped: an indication of proportion, not a scale drawing.
     const wall = wallThicknessMm ?? 12;
-    const radius = 1.25 + Math.max(-0.25, Math.min(0.35, (wall - 12) / 40));
-    const geo = buildTube(radius, 9, 72, 44);
+    const radius = 1.2 + Math.max(-0.22, Math.min(0.32, (wall - 12) / 40));
+    const geo = buildTube(radius, 8.2, 80, 48);
 
     const buf = (target: number, data: ArrayBufferView) => {
       const b = gl!.createBuffer(); gl!.bindBuffer(target, b);
@@ -235,7 +341,7 @@ export function Pipeline3D({
     const aUv = gl.getAttribLocation(prog, 'aUv');
     const U = (n: string) => gl!.getUniformLocation(prog, n);
     const u = {
-      proj: U('uProj'), view: U('uView'), model: U('uModel'), nmat: U('uNormalMat'),
+      proj: U('uProj'), view: U('uView'), nmat: U('uNormalMat'),
       cam: U('uCam'), band: U('uBand'), corrosion: U('uCorrosion'),
       alpha: U('uAlpha'), flip: U('uFlip'),
     };
@@ -256,6 +362,9 @@ export function Pipeline3D({
 
     const band = BAND_RGB[riskBand] ?? BAND_RGB.normal;
     const corrosion = Math.max(0, Math.min(1, corrosionRate / RATE_CEILING_MPY));
+    // The identity 3x3: the model never moves, only the camera orbits, so
+    // normals need no transform.
+    const IDENTITY3 = new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1]);
 
     let raf = 0;
     const t0 = performance.now();
@@ -267,17 +376,19 @@ export function Pipeline3D({
       if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
       gl!.viewport(0, 0, w, h);
 
-      const spin = (still || reduced) ? 0 : ((now - t0) / 1000) * 0.16;
-      const model = rotYZ(-0.22 + Math.sin(spin) * 0.22, -0.05);
-      const eye = [0, 0.5, 5.0];
+      // Idle drift, until the first interaction. It advertises that the
+      // model is live without fighting the user once they take hold of it.
+      if (!interacted.current && !reduced && !drag.current) {
+        orbit.current.az = HOME.az + Math.sin((now - t0) / 5200) * 0.55;
+      }
 
-      gl!.uniformMatrix4fv(u.proj, false, perspective(40 * Math.PI / 180, w / h, 0.1, 100));
-      gl!.uniformMatrix4fv(u.view, false, lookAt(eye, [0, 0, 0]));
-      gl!.uniformMatrix4fv(u.model, false, model);
-      gl!.uniformMatrix3fv(u.nmat, false, new Float32Array([
-        model[0], model[1], model[2], model[4], model[5], model[6],
-        model[8], model[9], model[10],
-      ]));
+      const { az, el, dist } = orbit.current;
+      const ce = Math.cos(el);
+      const eye = [dist * ce * Math.sin(az), dist * Math.sin(el), dist * ce * Math.cos(az)];
+
+      gl!.uniformMatrix4fv(u.proj, false, perspective(38 * Math.PI / 180, w / h, 0.1, 100));
+      gl!.uniformMatrix4fv(u.view, false, lookAt(eye, [0, 0, 0], [0, 1, 0]));
+      gl!.uniformMatrix3fv(u.nmat, false, IDENTITY3);
       gl!.uniform3f(u.cam, eye[0], eye[1], eye[2]);
       gl!.uniform3f(u.band, band[0], band[1], band[2]);
       gl!.uniform1f(u.corrosion, corrosion);
@@ -286,8 +397,8 @@ export function Pipeline3D({
       gl!.disable(gl!.BLEND);
       gl!.depthMask(true);
 
-      // Bore first (back faces), then the near wall glassy over it — the
-      // same cutaway trick as the landing hero, and no cutaway geometry.
+      // Bore first (back faces), then the near wall glassy over it — a
+      // cutaway with no cutaway geometry.
       bind();
       gl!.cullFace(gl!.FRONT);
       gl!.uniform1f(u.flip, 1); gl!.uniform1f(u.alpha, 1);
@@ -297,32 +408,69 @@ export function Pipeline3D({
       gl!.blendFunc(gl!.SRC_ALPHA, gl!.ONE_MINUS_SRC_ALPHA);
       gl!.depthMask(false);
       gl!.cullFace(gl!.BACK);
-      gl!.uniform1f(u.flip, 0); gl!.uniform1f(u.alpha, 0.34);
+      gl!.uniform1f(u.flip, 0); gl!.uniform1f(u.alpha, 0.40);
       gl!.drawElements(gl!.TRIANGLES, geo.count, gl!.UNSIGNED_SHORT, 0);
       gl!.depthMask(true);
       gl!.disable(gl!.BLEND);
 
-      if (!(still || reduced)) raf = requestAnimationFrame(draw);
+      raf = requestAnimationFrame(draw);
     };
 
-    draw(t0);
+    raf = requestAnimationFrame(draw);
     return () => { if (raf) cancelAnimationFrame(raf); };
-  }, [corrosionRate, wallThicknessMm, riskBand, still]);
+  }, [corrosionRate, wallThicknessMm, riskBand]);
 
   if (failed) {
     return <PipeSection corrosionRate={corrosionRate} riskBand={riskBand} height={height} />;
   }
+
   return (
-    <canvas
-      ref={ref}
-      className="block w-full"
-      style={{ height }}
-      role="img"
-      aria-label={
-        `Pipe segment rendered at ${corrosionRate.toFixed(2)} mils per year, ` +
-        `${riskBand} risk. Surface pitting is proportional to the predicted rate.`
-      }
-    />
+    <div className="relative">
+      <canvas
+        ref={canvasRef}
+        tabIndex={0}
+        className={cx('block w-full touch-none outline-none',
+                      'focus-visible:ring-1 focus-visible:ring-accent',
+                      dragging ? 'cursor-grabbing' : 'cursor-grab')}
+        style={{ height }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+        onKeyDown={onKeyDown}
+        role="img"
+        aria-label={
+          `Rotatable 3D view of a pipe segment at ${corrosionRate.toFixed(2)} mils `
+          + `per year, ${riskBand} risk. Surface pitting is proportional to the `
+          + `predicted rate. Drag or use the arrow keys to rotate.`
+        }
+      />
+
+      {/* The affordance. Without it a static-looking render gives no reason
+          to try dragging it. Fades once the user has. */}
+      <div
+        className={cx(
+          'pointer-events-none absolute bottom-1.5 left-2 transition-opacity duration-500',
+          touched ? 'opacity-0' : 'opacity-100',
+        )}
+      >
+        <span className="label" style={{ fontSize: 8 }}>Drag to rotate</span>
+      </div>
+
+      {touched && (
+        <button
+          type="button"
+          onClick={reset}
+          title="Reset view"
+          aria-label="Reset the 3D view"
+          className="absolute right-1.5 top-1.5 grid h-[22px] w-[22px] place-items-center
+                     border border-line-soft bg-panel/85 text-muted transition-colors
+                     hover:text-accent"
+        >
+          <RotateCcw size={11} />
+        </button>
+      )}
+    </div>
   );
 }
 
