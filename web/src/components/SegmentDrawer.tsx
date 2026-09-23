@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, X } from 'lucide-react';
 
 import { api } from '../lib/api';
+import { Pipeline3D } from './Pipeline3D';
 import type { InspectionMethod } from '../lib/types';
 import { Button, RiskBadge, SectionTitle, Sweep, cx, fmt, useToast } from './ui';
 
@@ -153,6 +154,31 @@ export default function SegmentDrawer({
 
             {tab === 'risk' && (
               <>
+                {/* The segment, rendered from its own numbers.
+                    Pitting density is a function of the predicted rate and
+                    the rim light is its risk band, so two segments never
+                    look alike unless they actually are alike. It is placed
+                    above the readout because a shape is recognised faster
+                    than a number is read. */}
+                <div className="mb-3 overflow-hidden border border-line-soft bg-sunken">
+                  <Pipeline3D
+                    corrosionRate={detail.predicted_rate_mpy}
+                    wallThicknessMm={
+                      typeof detail.attributes?.wall_thickness_mm === 'number'
+                        ? detail.attributes.wall_thickness_mm
+                        : undefined
+                    }
+                    riskBand={detail.risk_band}
+                    height={132}
+                  />
+                  <div className="flex items-center gap-3 border-t border-line-soft px-2.5 py-1.5">
+                    <span className="label" style={{ fontSize: 8 }}>Surface</span>
+                    <span className="text-[10px] text-dim">
+                      Pitting scaled to predicted rate · illustrative, not an inspection image
+                    </span>
+                  </div>
+                </div>
+
                 {/* primary readout */}
                 <div className="bracket mb-4 px-3 py-2.5">
                   <div className="label mb-1.5">Predicted corrosion rate</div>
