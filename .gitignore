@@ -17,3 +17,6 @@ models/*
 node_modules/
 web/dist/
 .backup/
+
+# landing bundle is a build artefact, rebuilt by vite.landing.config.ts
+landing/bundle.js
