@@ -13,5 +13,16 @@ fastapi>=0.115.0
 uvicorn>=0.32.0
 pydantic>=2.9.0
 httpx>=0.27.0
+# Required by FastAPI to parse multipart/form-data — the pipeline photo upload
+# endpoint (POST /api/assistant/analyze-image) does not work without it.
+python-multipart>=0.0.9
 sqlalchemy>=2.0.0
 psycopg2-binary>=2.9.9
+
+# Routes TLS verification through the OS certificate store. Required on any
+# network with an intercepting proxy, where Python's bundled CA list rejects
+# the re-signed certificate and every outbound call looks like a dead host.
+truststore>=0.9.0
+# The FT-Transformer baseline (src/models/ft_transformer.py). Optional - the
+# XGBoost path, which is the one that ships, needs nothing extra.
+torch>=2.0.0

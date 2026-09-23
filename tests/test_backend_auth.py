@@ -50,15 +50,15 @@ def test_inspector_is_scoped_to_their_region():
     resp = client.get("/api/segments", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 200
     regions = {s["region"] for s in resp.json()["segments"]}
-    assert regions == {"Gulf Coast"}
+    assert regions == {"Western"}
 
 
 def test_inspector_cannot_view_segment_outside_their_region():
     token = _login("inspector1", "inspect123")
-    # Find a segment that is NOT in Gulf Coast via the admin view first.
+    # Find a segment that is NOT in Western via the admin view first.
     admin_token = _login("admin", "admin123")
     all_segments = client.get("/api/segments", headers={"Authorization": f"Bearer {admin_token}"}).json()["segments"]
-    other_region_segment = next(s for s in all_segments if s["region"] != "Gulf Coast")
+    other_region_segment = next(s for s in all_segments if s["region"] != "Western")
 
     resp = client.get(f"/api/segments/{other_region_segment['segment_id']}", headers={"Authorization": f"Bearer {token}"})
     assert resp.status_code == 403

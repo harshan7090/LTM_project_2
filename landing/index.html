@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="en" class="no-js">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="color-scheme" content="dark" />
+<title>CORVEX — Pipeline Integrity &amp; Corrosion Intelligence</title>
+<meta name="description" content="Predict. Protect. Prevent. AI-powered pipeline integrity and corrosion intelligence." />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@300;400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="/landing/app.css" />
+<!--
+  Stylesheet and scripts are all external and same-origin, because the
+  console sends script-src 'self' and that blocks inline script outright.
+  <html class="no-js"> is cleared by app.js; if the script never runs, the
+  .no-js rules keep every word on this page readable and every section open.
+-->
+</head>
+<body>
+
+<a class="skip" href="#hero">Skip to content</a>
+
+<!-- Scroll progress, drawn as a pipeline with an inspection pig in it. -->
+<div class="rail" aria-hidden="true">
+  <div class="rail-weld" style="top:25%"></div>
+  <div class="rail-weld" style="top:50%"></div>
+  <div class="rail-weld" style="top:75%"></div>
+  <div class="rail-pig" id="rail-pig"></div>
+  <div class="rail-pct num" id="rail-pct">00</div>
+</div>
+
+<!-- Section jump list. Labels appear on hover and on keyboard focus, so it
+     is navigable without a pointer rather than being decoration. -->
+<nav class="dots" id="dots" aria-label="Page sections">
+  <a href="#hero"  data-label="Top"><span></span></a>
+  <a href="#how"   data-label="How it works"><span></span></a>
+  <a href="#proof" data-label="Numbers"><span></span></a>
+  <a href="#stack" data-label="Technology"><span></span></a>
+  <a href="#cta"   data-label="Open console"><span></span></a>
+</nav>
+
+<header id="header">
+  <div class="mark">C</div>
+  <div class="wordmark">Corvex</div>
+  <span class="header-sub label">Pipeline Integrity &amp; Corrosion Intelligence</span>
+  <div class="spacer"></div>
+  <a class="btn btn-sm" href="/console">Launch console</a>
+</header>
+
+<main>
+
+  <!-- ============================================================ hero -->
+  <section id="hero">
+    <!-- The 3D scene. Removed outright by app.js if WebGL is unavailable,
+         which uncovers the flat fallback beneath it. -->
+    <canvas id="pipe-gl" class="pipe-gl" aria-hidden="true"></canvas>
+    <div class="pipe-flat" aria-hidden="true"><span></span><span></span><span></span></div>
+    <div class="hero-veil" aria-hidden="true"></div>
+
+    <div class="wrap hero-copy" id="hero-copy">
+      <p class="eyebrow reveal">
+        <span class="lamp"></span>
+        <span class="label">Predict. Protect. Prevent.</span>
+      </p>
+      <h1 class="reveal d1">Corvex<span class="thin">.</span></h1>
+      <p class="lede reveal d2">
+        Thousands of buried segments, a handful of crews. Corvex predicts
+        where corrosion is worst, scores what a failure there would cost, and
+        dispatches the nearest qualified technician — with every decision a
+        regulator could question made in <strong>deterministic, tested
+        code</strong>, not by a language model.
+      </p>
+      <div class="hero-actions reveal d3">
+        <a class="btn" href="/console">
+          Launch console
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </a>
+        <a class="btn btn-ghost" href="#how">How it works</a>
+      </div>
+      <p class="hero-note reveal d4">
+        Sign in as <span class="num">supervisor1</span> / <span class="num">supervise123</span>
+        — the demo runs on synthetic data.
+      </p>
+    </div>
+
+    <a class="scroll-cue" href="#how" aria-label="Scroll to how it works">
+      <span class="label">Scroll</span>
+      <span class="scroll-cue-line" aria-hidden="true"></span>
+    </a>
+  </section>
+
+  <!-- ==================================================== how it works -->
+  <!-- A sticky sequence: the left panel holds still and redraws while the
+       right column scrolls. One stage is on screen at a time, so the order
+       of the pipeline is carried by the scrolling itself. -->
+  <section id="how">
+    <div class="wrap">
+      <span class="section-num reveal">01 / How it works</span>
+      <h2 class="reveal d1">Five stages, <em>one pipeline</em></h2>
+      <p class="body reveal d2">
+        A photograph and a row of asset data go in. A ranked work order for a
+        named technician comes out.
+      </p>
+    </div>
+
+    <div class="wrap stage-grid">
+      <div class="stage-sticky">
+        <div class="stage-panel">
+          <div class="stage-head">
+            <span class="stage-n num" id="stage-n">01</span>
+            <span class="stage-of label">of 05</span>
+          </div>
+          <h3 class="stage-title" id="stage-title">Corrosion Vision</h3>
+          <div class="stage-figs" id="stage-figs">
+
+            <svg class="stage-fig is-on" data-stage="1" viewBox="0 0 300 200" role="img" aria-label="A photograph being read for corrosion features">
+              <rect x="26" y="34" width="248" height="132" rx="2" fill="#191410" stroke="#2b333c"/>
+              <rect x="26" y="96" width="248" height="70" fill="#2a2118"/>
+              <ellipse cx="128" cy="120" rx="26" ry="18" fill="#4a3116"/>
+              <ellipse cx="128" cy="120" rx="17" ry="12" fill="#14100b"/>
+              <ellipse cx="166" cy="134" rx="13" ry="9" fill="#14100b"/>
+              <rect class="scan-box" x="92" y="96" width="106" height="52" fill="none" stroke="#f5a524" stroke-width="2"/>
+              <rect x="92" y="80" width="106" height="16" fill="#f5a524"/>
+              <text x="98" y="92" fill="#14181d" font-family="Barlow Condensed, sans-serif" font-size="11" letter-spacing="1.2">PITTING · 0.88</text>
+            </svg>
+
+            <svg class="stage-fig" data-stage="2" viewBox="0 0 300 200" role="img" aria-label="Feature contributions to a predicted corrosion rate">
+              <line x1="150" y1="40" x2="150" y2="172" stroke="#2b333c" stroke-width="1"/>
+              <rect x="150" y="48"  width="74" height="15" fill="#ec835a"/>
+              <rect x="150" y="72"  width="49" height="15" fill="#ec835a"/>
+              <rect x="150" y="96"  width="32" height="15" fill="#ec835a"/>
+              <rect x="122" y="120" width="28" height="15" fill="#35c77f"/>
+              <rect x="104" y="144" width="46" height="15" fill="#35c77f"/>
+              <text x="144" y="60"  text-anchor="end" fill="#8d949c" font-family="IBM Plex Mono, monospace" font-size="9">coating</text>
+              <text x="144" y="84"  text-anchor="end" fill="#8d949c" font-family="IBM Plex Mono, monospace" font-size="9">soil</text>
+              <text x="144" y="108" text-anchor="end" fill="#8d949c" font-family="IBM Plex Mono, monospace" font-size="9">age</text>
+              <text x="156" y="132" fill="#8d949c" font-family="IBM Plex Mono, monospace" font-size="9">cp mV</text>
+              <text x="156" y="156" fill="#8d949c" font-family="IBM Plex Mono, monospace" font-size="9">wall</text>
+              <text x="150" y="32" text-anchor="middle" fill="#f5a524" font-family="IBM Plex Mono, monospace" font-size="11">4.18 mpy</text>
+            </svg>
+
+            <svg class="stage-fig" data-stage="3" viewBox="0 0 300 200" role="img" aria-label="A five by five likelihood and consequence risk matrix">
+              <g>
+                <rect x="60"  y="36"  width="34" height="24" fill="#f5a524" opacity=".34"/>
+                <rect x="96"  y="36"  width="34" height="24" fill="#ec835a" opacity=".30"/>
+                <rect x="132" y="36"  width="34" height="24" fill="#ff4d3d" opacity=".30"/>
+                <rect x="168" y="36"  width="34" height="24" fill="#ff4d3d" opacity=".24"/>
+                <rect x="204" y="36"  width="34" height="24" fill="#ff4d3d" opacity=".20"/>
+                <rect x="60"  y="62"  width="34" height="24" fill="#35c77f" opacity=".40"/>
+                <rect x="96"  y="62"  width="34" height="24" fill="#f5a524" opacity=".36"/>
+                <rect x="132" y="62"  width="34" height="24" fill="#ec835a" opacity=".34"/>
+                <rect x="168" y="62"  width="34" height="24" fill="#ff4d3d" opacity=".30"/>
+                <rect x="204" y="62"  width="34" height="24" fill="#ff4d3d" opacity=".22"/>
+                <rect x="60"  y="88"  width="34" height="24" fill="#35c77f" opacity=".52"/>
+                <rect x="96"  y="88"  width="34" height="24" fill="#f5a524" opacity=".44"/>
+                <rect x="132" y="88"  width="34" height="24" fill="#f5a524" opacity=".40"/>
+                <rect x="168" y="88"  width="34" height="24" fill="#ec835a" opacity=".34"/>
+                <rect x="204" y="88"  width="34" height="24" fill="#ff4d3d" opacity=".26"/>
+                <rect x="60"  y="114" width="34" height="24" fill="#35c77f" opacity=".62"/>
+                <rect x="96"  y="114" width="34" height="24" fill="#35c77f" opacity=".54"/>
+                <rect x="132" y="114" width="34" height="24" fill="#f5a524" opacity=".46"/>
+                <rect x="168" y="114" width="34" height="24" fill="#f5a524" opacity=".36"/>
+                <rect x="204" y="114" width="34" height="24" fill="#ec835a" opacity=".30"/>
+                <rect x="60"  y="140" width="34" height="24" fill="#35c77f" opacity=".80"/>
+                <rect x="96"  y="140" width="34" height="24" fill="#35c77f" opacity=".66"/>
+                <rect x="132" y="140" width="34" height="24" fill="#35c77f" opacity=".58"/>
+                <rect x="168" y="140" width="34" height="24" fill="#35c77f" opacity=".44"/>
+                <rect x="204" y="140" width="34" height="24" fill="#f5a524" opacity=".34"/>
+              </g>
+              <rect x="132" y="36" width="34" height="24" fill="none" stroke="#e8e6e1" stroke-width="1.6"/>
+              <text x="149" y="180" text-anchor="middle" fill="#8d949c" font-family="Barlow Condensed, sans-serif" font-size="11" letter-spacing="1.6">CONSEQUENCE →</text>
+              <text x="48" y="100" text-anchor="middle" fill="#8d949c" font-family="Barlow Condensed, sans-serif" font-size="11" letter-spacing="1.6" transform="rotate(-90 48 100)">LIKELIHOOD →</text>
+            </svg>
+
+            <svg class="stage-fig" data-stage="4" viewBox="0 0 300 200" role="img" aria-label="Repair options ranked by value per crew day">
+              <text x="30" y="44" fill="#8d949c" font-family="Barlow Condensed, sans-serif" font-size="11" letter-spacing="1.4">RANKED BY VALUE / CREW-DAY</text>
+              <rect x="30" y="56"  width="180" height="18" fill="#35c77f" opacity=".85"/>
+              <rect x="30" y="82"  width="118" height="18" fill="#f5a524" opacity=".85"/>
+              <rect x="30" y="108" width="86"  height="18" fill="#f5a524" opacity=".55"/>
+              <rect x="30" y="134" width="44"  height="18" fill="#5a626b" opacity=".85"/>
+              <text x="216" y="70"  fill="#e8e6e1" font-family="IBM Plex Mono, monospace" font-size="10">SLV-B</text>
+              <text x="154" y="96"  fill="#a6aeb6" font-family="IBM Plex Mono, monospace" font-size="10">CUTOUT</text>
+              <text x="122" y="122" fill="#a6aeb6" font-family="IBM Plex Mono, monospace" font-size="10">RECOAT</text>
+              <text x="80"  y="148" fill="#a6aeb6" font-family="IBM Plex Mono, monospace" font-size="10">MON</text>
+            </svg>
+
+            <svg class="stage-fig" data-stage="5" viewBox="0 0 300 200" role="img" aria-label="Work orders joined to the nearest qualified crew">
+              <line x1="96" y1="96" x2="52"  y2="58"  stroke="#3a4149" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="96" y1="96" x2="62"  y2="140" stroke="#3a4149" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="96" y1="96" x2="140" y2="52"  stroke="#3a4149" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="212" y1="118" x2="256" y2="80"  stroke="#3a4149" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="212" y1="118" x2="248" y2="152" stroke="#3a4149" stroke-width="1" stroke-dasharray="3 3"/>
+              <line x1="212" y1="118" x2="168" y2="150" stroke="#3a4149" stroke-width="1" stroke-dasharray="3 3"/>
+              <circle cx="52"  cy="58"  r="4" fill="#ec835a"/>
+              <circle cx="62"  cy="140" r="4" fill="#35c77f"/>
+              <circle cx="140" cy="52"  r="4.5" fill="#ff4d3d"/>
+              <circle cx="256" cy="80"  r="4" fill="#35c77f"/>
+              <circle cx="248" cy="152" r="4.5" fill="#ff4d3d"/>
+              <circle cx="168" cy="150" r="4" fill="#ec835a"/>
+              <rect x="89"  y="89"  width="14" height="14" fill="#f5a524"/>
+              <rect x="205" y="111" width="14" height="14" fill="#f5a524"/>
+              <text x="96"  y="120" text-anchor="middle" fill="#8d949c" font-family="Barlow Condensed, sans-serif" font-size="10" letter-spacing="1.2">CREW A</text>
+              <text x="212" y="142" text-anchor="middle" fill="#8d949c" font-family="Barlow Condensed, sans-serif" font-size="10" letter-spacing="1.2">CREW B</text>
+            </svg>
+
+          </div>
+          <div class="stage-track" aria-hidden="true"><span id="stage-fill"></span></div>
+        </div>
+      </div>
+
+      <ol class="stage-list" id="stage-list">
+        <li class="stage" data-stage="1">
+          <span class="stage-idx num">01</span>
+          <h3>Corrosion Vision</h3>
+          <p>Image-based corrosion detection. A vision model describes what is
+             in the photograph and reasons over it alongside the asset data —
+             as an <em>indication</em>, never as an input to the maths.</p>
+        </li>
+        <li class="stage" data-stage="2">
+          <span class="stage-idx num">02</span>
+          <h3>Integrity Analytics</h3>
+          <p>Gradient-boosted corrosion rate with exact SHAP attribution, so
+             every prediction says <em>why</em> — and a conformal interval
+             says how far to trust it.</p>
+        </li>
+        <li class="stage" data-stage="3">
+          <span class="stage-idx num">03</span>
+          <h3>Risk Engine</h3>
+          <p>Rate &#215; consequence on the 5&#215;5 the discipline already
+             uses. HCA status under 49&nbsp;CFR 192.903 / 195.450, impact
+             radius, and remaining life from ASME B31.8 and B31G.</p>
+        </li>
+        <li class="stage" data-stage="4">
+          <span class="stage-idx num">04</span>
+          <h3>Maintenance Intelligence</h3>
+          <p>Which inspection, which repair, and when — ranked by diagnostic
+             value per crew-day, with the statutory cap applied last and only
+             ever downward.</p>
+        </li>
+        <li class="stage" data-stage="5">
+          <span class="stage-idx num">05</span>
+          <h3>Dispatch</h3>
+          <p>A constraint solver assigns the nearest qualified crew under
+             skill, travel and deadline limits — and names the capacity gap
+             when the fleet cannot be covered.</p>
+        </li>
+      </ol>
+    </div>
+  </section>
+
+  <!-- ========================================================== proof -->
+  <section id="proof">
+    <div class="wrap">
+      <div class="stats">
+        <div class="stat reveal"><div class="v" data-count="5000">0</div><div class="k label">Segments scored</div></div>
+        <div class="stat reveal d1"><div class="v" data-count="2616">0</div><div class="k label">In an HCA</div></div>
+        <div class="stat reveal d2"><div class="v"><span data-count="89.8" data-decimals="1">0</span><span class="unit">%</span></div><div class="k label">Interval coverage</div></div>
+        <div class="stat reveal d3"><div class="v" data-count="409">0</div><div class="k label">Tests passing</div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ======================================================= tech stack -->
+  <section id="stack">
+    <div class="wrap">
+      <span class="section-num reveal">02 / Technology</span>
+      <h2 class="reveal d1">Built to be <em>defended</em></h2>
+      <p class="body reveal d2">
+        An engineer has to justify to a regulator why a segment got a DCVG
+        survey and not an in-line run. A model that answers differently on
+        Tuesday cannot be defended — so the decisions are code, and the
+        language model only explains them.
+      </p>
+
+      <div class="stack-grid">
+        <div class="stack-col reveal">
+          <h4 class="label">Machine learning</h4>
+          <span class="chip"><b>XGBoost</b> corrosion rate</span>
+          <span class="chip"><b>SHAP</b> exact attribution</span>
+          <span class="chip"><b>Conformal prediction</b> calibrated intervals</span>
+          <span class="chip"><b>PyTorch</b> FT-Transformer baseline</span>
+        </div>
+        <div class="stack-col reveal d1">
+          <h4 class="label">Optimisation &amp; engineering</h4>
+          <span class="chip"><b>OR-Tools CP-SAT</b> two solvers</span>
+          <span class="chip"><b>ASME B31.4 / B31.8</b> pressure design</span>
+          <span class="chip"><b>ASME B31G</b> remaining strength</span>
+          <span class="chip"><b>49 CFR 192 / 195</b> HCA &amp; intervals</span>
+        </div>
+        <div class="stack-col reveal d2">
+          <h4 class="label">Platform</h4>
+          <span class="chip"><b>FastAPI</b> &#183; Pydantic</span>
+          <span class="chip"><b>React 18</b> &#183; TypeScript &#183; Vite</span>
+          <span class="chip"><b>Tailwind v4</b> &#183; TanStack</span>
+          <span class="chip"><b>WebGL</b> hand-written, no dependency</span>
+        </div>
+        <div class="stack-col reveal d3">
+          <h4 class="label">Language &amp; retrieval</h4>
+          <span class="chip"><b>OpenRouter</b> runtime model discovery</span>
+          <span class="chip"><b>Ollama</b> local vision + embeddings</span>
+          <span class="chip"><b>TF-IDF + dense</b> fused by RRF</span>
+          <span class="chip"><b>PBKDF2</b> &#183; CSP &#183; RBAC</span>
+        </div>
+      </div>
+
+      <p class="footnote reveal">
+        <strong>Conformal prediction</strong> is the piece worth a second
+        look. Quantile regression predicts a range; conformal
+        <em>guarantees</em> it — distribution-free, finite-sample, any model.
+        Measured on held-out data: <span class="num">89.8%</span> empirical
+        coverage against a <span class="num">90%</span> target, and
+        <span class="num">93.9%</span> against 95%. Intervals widen where the
+        model is genuinely less certain. Conservative remaining-life uses the upper bound.
+      </p>
+    </div>
+  </section>
+
+  <!-- ============================================================= cta -->
+  <section id="cta">
+    <div class="wrap">
+      <h2 class="reveal">Open the <em>console</em></h2>
+      <p class="body reveal d1">
+        The register, the risk matrix, the SHAP decomposition, the scheduler
+        and the dispatch board — on five thousand scored segments.
+      </p>
+      <div class="hero-actions reveal d2">
+        <a class="btn btn-lg" href="/console">
+          Launch console
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
+        </a>
+      </div>
+      <p class="hero-note reveal d3">
+        <span class="num">supervisor1</span> / <span class="num">supervise123</span>
+        for the full fleet · <span class="num">inspector1</span> /
+        <span class="num">inspect123</span> for one region
+      </p>
+    </div>
+  </section>
+
+</main>
+
+<footer>
+  <div class="wrap">
+    <span class="label" style="font-size:10px">Corvex</span>
+    <span>Predict. Protect. Prevent.</span>
+    <span class="spacer"></span>
+    <span class="num">Synthetic demonstration data &#183; not for operational use</span>
+  </div>
+</footer>
+
+<script src="/landing/pipe3d.js"></script>
+<script src="/landing/app.js"></script>
+</body>
+</html>

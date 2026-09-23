@@ -1,0 +1,350 @@
+@import "tailwindcss";
+
+/*
+  ============================================================================
+  IntegrityAI Console — design language
+  ============================================================================
+
+  Reference point: an industrial control-room HMI / SCADA panel, not a SaaS
+  dashboard. That choice is not decoration — it follows from who uses this and
+  where. A pipeline integrity engineer reads this between other tasks, often on
+  a plant machine, and wants density and precision over whitespace and polish.
+
+  The rules that follow from it:
+
+    Colour    Safety amber on graphite, borrowed from hazard signage and
+              control panels. Red/amber/green carry their industrial meanings
+              (critical / elevated / normal) and are used for nothing else, so
+              colour is always information and never decoration.
+
+    Corners   2px, effectively square. Rounded cards read "consumer app";
+              instrument panels are rectilinear.
+
+    Rules     Hairlines, not shadows. Depth comes from tone, the way a printed
+              engineering drawing separates regions.
+
+    Type      Condensed uppercase for labels (signage), mono for every number.
+              Tabular numerals throughout so decimal points align down a
+              column — you can scan a rate column without reading it.
+
+    Density   Tight. Engineers want more rows visible, not more air.
+
+    Brackets  Corner ticks on primary panels, from technical drawing and
+              targeting reticles. This is the one purely stylistic flourish,
+              and it is what stops the layout reading as a generic card grid.
+  ============================================================================
+*/
+
+@theme {
+  /* --- graphite base ---------------------------------------------------- */
+  --color-bg: #0d1013;
+  --color-panel: #14181d;
+  --color-raised: #1b2026;
+  --color-line: #252c34;
+  --color-line-soft: #1c2229;
+
+  /* --- ink -------------------------------------------------------------- */
+  --color-ink: #e8e6e1;
+  /* 7.94:1 on the panel. Was #8d949c; each step moved up one so that the
+     dimmest text token could clear 4.5:1 without collapsing the hierarchy. */
+  --color-muted: #a6aeb6;
+  /* 5.81:1 on the panel, 5.35:1 on a raised row. Was #5a626b at 2.88:1,
+     which is a contrast failure for every one of its 81 uses. */
+  --color-dim: #8d949c;
+  /* The old value, kept for HAIRLINES ONLY - it is not legible as text. */
+  --color-hairline: #5a626b;
+
+  /* --- safety amber: the single accent ---------------------------------- */
+  --color-accent: #f5a524;
+  --color-accent-soft: #4a3717;
+
+  /* --- HMI status colours, used ONLY for status ------------------------- */
+  --color-critical: #ff4d3d;
+  --color-elevated: #f5a524;
+  --color-normal: #35c77f;
+
+  /* --- risk-matrix bands ------------------------------------------------
+     Four ordered severity steps. These are STATUS colours, not a categorical
+     or sequential ramp, and the distinction is what makes them legal: every
+     four-step ramp across green->red fails the categorical adjacent-pair
+     separation, and any ramp that passes the ordinal single-hue rule throws
+     away the traffic-light reading the discipline actually uses.
+
+     Status is the right job for them, and status has one obligation: hue
+     never carries the meaning alone. Every cell prints its count, the legend
+     names every band, and the band is a function of row x column. All four
+     clear 3:1 against the panel surface - checked, not eyeballed. The light
+     theme gets its own steps below, never an automatic flip. */
+  --color-band-low: #35c77f;       /* 8.17:1 */
+  --color-band-moderate: #f5a524;  /* 8.73:1 */
+  --color-band-high: #ec835a;      /* 6.76:1 */
+  --color-band-severe: #ff4d3d;    /* 5.42:1 */
+
+  --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --font-label: "Barlow Condensed", "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+}
+
+/* Light theme: technical paper, not plain white. Warm off-white with a blue-
+   black ink, the way a printed drawing sheet reads. */
+html.light {
+  --color-bg: #eceae4;
+  --color-panel: #f7f6f2;
+  --color-raised: #e6e3dc;
+  --color-line: #c9c5bb;
+  --color-line-soft: #d8d4cb;
+
+  --color-ink: #14181c;
+  /* Re-stepped for paper, not derived from the dark set. 6.28:1 worst. */
+  --color-muted: #4a5158;
+  /* 5.21:1 worst. Was #838a91 at 2.73:1 on a raised row. */
+  --color-dim: #565d64;
+  --color-hairline: #838a91;
+
+  --color-accent: #9a6200;
+  --color-accent-soft: #f0dfc0;
+
+  --color-critical: #c22f21;
+  --color-elevated: #8a5c00;
+  --color-normal: #1c7a4f;
+
+  /* Re-stepped for paper, not dimmed copies of the dark set. Contrast
+     against the light panel: 4.92 / 5.38 / 4.74 / 5.22. */
+  --color-band-low: #1c7a4f;
+  --color-band-moderate: #8a5c00;
+  --color-band-high: #b1521f;
+  --color-band-severe: #c22f21;
+  color-scheme: light;
+}
+
+html.dark { color-scheme: dark; }
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: var(--font-sans);
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  /* Every number in the app aligns on its decimal point. */
+  font-variant-numeric: tabular-nums;
+
+  /* Blueprint grid. Deliberately near-threshold — you read it as texture, not
+     as a pattern, and it disappears entirely behind panels. */
+  background-image:
+    linear-gradient(to right, color-mix(in srgb, var(--color-line) 26%, transparent) 1px, transparent 1px),
+    linear-gradient(to bottom, color-mix(in srgb, var(--color-line) 26%, transparent) 1px, transparent 1px);
+  background-size: 34px 34px;
+  background-attachment: fixed;
+}
+
+/* --- typographic primitives ---------------------------------------------- */
+
+/* Signage label: condensed, uppercase, wide-tracked. Used for every field
+   label, column header, and section title in the app. */
+.label {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: 0.13em;
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 1.25;
+  color: var(--color-dim);
+}
+
+.label-lg {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  font-size: 19px;
+  line-height: 1.15;
+  color: var(--color-ink);
+}
+
+.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+/* --- corner-bracket panel ------------------------------------------------ */
+/*
+  The signature element. Four L-shaped ticks at the corners, drawn with two
+  gradients per pseudo-element so no extra DOM nodes are needed.
+*/
+.bracket {
+  position: relative;
+  background: var(--color-panel);
+  border: 1px solid var(--color-line-soft);
+}
+
+.bracket::before,
+.bracket::after {
+  content: "";
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  pointer-events: none;
+  border-color: var(--color-accent);
+  opacity: 0.85;
+}
+
+.bracket::before {
+  top: -1px; left: -1px;
+  border-top: 1.5px solid;
+  border-left: 1.5px solid;
+}
+
+.bracket::after {
+  bottom: -1px; right: -1px;
+  border-bottom: 1.5px solid;
+  border-right: 1.5px solid;
+}
+
+/* --- HMI status lamp ----------------------------------------------------- */
+/*
+  A physical indicator lamp: bright core, soft bloom. Critical pulses, because
+  on a real panel the alarm state is the one that moves.
+*/
+.lamp {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: currentColor;
+  box-shadow: 0 0 0 2px color-mix(in srgb, currentColor 18%, transparent),
+              0 0 9px color-mix(in srgb, currentColor 55%, transparent);
+}
+
+.lamp-critical { animation: lamp-pulse 1.9s ease-in-out infinite; }
+
+@keyframes lamp-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+
+/* --- scrollbars ---------------------------------------------------------- */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-line) transparent;
+}
+*::-webkit-scrollbar { width: 9px; height: 9px; }
+*::-webkit-scrollbar-track { background: transparent; }
+*::-webkit-scrollbar-thumb {
+  background: var(--color-line);
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover { background-clip: padding-box; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* --- LLM markdown output ------------------------------------------------- */
+.prose-chat {
+  & p { margin: 0 0 0.55rem; }
+  & p:last-child { margin-bottom: 0; }
+  & ul, & ol { margin: 0.4rem 0 0.55rem 1.15rem; }
+  & ul { list-style: square; }
+  & ol { list-style: decimal; }
+  & li { margin-bottom: 0.22rem; }
+  & li::marker { color: var(--color-accent); }
+  & strong { font-weight: 600; color: var(--color-ink); }
+
+  /* Model section headings inherit the signage treatment, so generated text
+     sits inside the design system instead of looking pasted in. */
+  & h1, & h2, & h3, & h4 {
+    font-family: var(--font-label);
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-accent);
+    margin: 0.9rem 0 0.35rem;
+    padding-bottom: 0.2rem;
+    border-bottom: 1px solid var(--color-line-soft);
+  }
+  & h1:first-child, & h2:first-child,
+  & h3:first-child, & h4:first-child { margin-top: 0; }
+
+  & code {
+    font-family: var(--font-mono);
+    font-size: 0.79rem;
+    background: var(--color-bg);
+    border: 1px solid var(--color-line-soft);
+    padding: 0.02rem 0.28rem;
+    color: var(--color-accent);
+  }
+  & pre {
+    background: var(--color-bg);
+    border: 1px solid var(--color-line-soft);
+    padding: 0.6rem 0.75rem;
+    overflow-x: auto;
+    margin: 0.5rem 0;
+  }
+  & pre code { background: none; border: none; padding: 0; color: inherit; }
+
+  & table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 0.55rem 0;
+    font-size: 0.78rem;
+  }
+  & th {
+    font-family: var(--font-label);
+    text-transform: uppercase;
+    letter-spacing: 0.09em;
+    font-size: 10px;
+    color: var(--color-dim);
+    text-align: left;
+  }
+  & th, & td {
+    border: 1px solid var(--color-line-soft);
+    padding: 0.28rem 0.45rem;
+  }
+  & blockquote {
+    border-left: 2px solid var(--color-accent);
+    padding-left: 0.7rem;
+    margin: 0.5rem 0;
+    color: var(--color-muted);
+  }
+  & a { color: var(--color-accent); text-decoration: underline; }
+}
+
+/* --- motion -------------------------------------------------------------- */
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+.animate-fade-up { animation: fade-up 200ms cubic-bezier(0.32, 0.72, 0, 1); }
+
+@keyframes blink {
+  0%, 80%, 100% { opacity: 0.22; }
+  40%           { opacity: 1; }
+}
+.animate-blink { animation: blink 1.15s infinite ease-in-out; }
+
+/* Readout sweep: a thin amber line crossing a panel while it computes. Reads
+   as an instrument taking a measurement rather than a generic spinner. */
+@keyframes sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+.animate-sweep { animation: sweep 1.5s ease-in-out infinite; }
+
+/* --- focus --------------------------------------------------------------- */
+:where(button, input, textarea, select, a, [tabindex]):focus-visible {
+  outline: 1.5px solid var(--color-accent);
+  outline-offset: 1px;
+}
+
+/* Cell ink for the risk matrix. The band fills are saturated, so the count
+   printed on top needs the OPPOSITE end of the surface scale from the theme
+   it sits in - near-black on the dark theme's bright fills, near-white on the
+   light theme's deep ones. Not a hardcoded hex, so the toggle carries it. */
+:root { --color-cell-ink: #0d1013; }
+html.light { --color-cell-ink: #f7f6f2; }

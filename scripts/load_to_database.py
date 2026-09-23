@@ -15,6 +15,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from config.settings import settings  # noqa: E402
+from src.data.cleaning import clean_dataset  # noqa: E402
 from src.data.database import get_engine, load_segments_into_db, ensure_acknowledgements_table  # noqa: E402
 from src.data.synthetic_generator import generate_pipeline_dataset  # noqa: E402
 
@@ -26,6 +27,15 @@ def main():
         import pandas as pd
         print(f"Loading existing dataset from {data_path}")
         df = pd.read_csv(data_path, keep_default_na=False, na_values=[""])
+        # The CSV is the as-received record, duplicates and blanks included.
+        # The database holds the ANALYTICAL dataset, because everything that
+        # reads it — the scoring service, the console, the scheduler —
+        # assumes one row per segment with usable values. Loading the raw
+        # frame would put duplicate segment_ids behind a primary-key-shaped
+        # lookup and silently serve whichever one came first.
+        print()
+        df, _report = clean_dataset(df, verbose=True)
+        print()
     else:
         print("No CSV found — generating synthetic dataset first...")
         df = generate_pipeline_dataset(n_segments=5000)

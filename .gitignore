@@ -12,3 +12,8 @@ models/*
 .vscode/*
 !.vscode/settings.json
 !.vscode/launch.json
+
+# build + deps
+node_modules/
+web/dist/
+.backup/

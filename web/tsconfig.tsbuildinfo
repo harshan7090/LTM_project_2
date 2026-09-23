@@ -1,0 +1,1 @@
+{"root":["./src/app.tsx","./src/main.tsx","./src/vite-env.d.ts","./src/components/segmentdrawer.tsx","./src/components/ui.tsx","./src/lib/api.ts","./src/lib/types.ts","./src/views/assistant.tsx","./src/views/dashboard.tsx","./src/views/fleet.tsx","./src/views/login.tsx","./src/views/maintenance.tsx","./src/views/schedule.tsx"],"version":"5.9.3"}

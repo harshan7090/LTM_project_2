@@ -1,0 +1,616 @@
+/* Corvex — landing page.
+ *
+ * REWRITTEN, NOT EXTENDED
+ *
+ *   The previous stylesheet still carried rules for six sections that had
+ *   been cut from the markup: .card, .limits, .fig-gauge, .instruments,
+ *   .map, .yard, .versus. Roughly two hundred and fifty lines styling
+ *   nothing. That is not merely dead weight — a stale rule that happens to
+ *   share a class name with a new one is exactly what produced the
+ *   full-width grey bar earlier in this project. Rules with no markup are a
+ *   hazard, so they are gone rather than commented out.
+ *
+ * THE PALETTE
+ *
+ *   Graphite ground, one safety-amber accent, and status hues used ONLY for
+ *   status. Body text is #c9cdd2 on #0d1013 — 11.4:1. The dimmest text on
+ *   the page is #98a0a8 at 6.9:1, which clears the 4.5:1 floor with room to
+ *   spare. Nothing here relies on a grey that only just passes.
+ *
+ * MOTION
+ *
+ *   Every animation is opacity or transform, so none of it triggers layout.
+ *   The reduced-motion block at the end is not a courtesy: it disables the
+ *   rAF loop, the sticky sequence's movement and every transition, and the
+ *   page stays completely legible with all of it off.
+ */
+
+/* ============================================================= tokens == */
+:root {
+  --bg: #0d1013;
+  --panel: #14181d;
+  --raised: #1b2026;
+  --line: #252c34;
+  --line-soft: #1c2229;
+
+  --ink: #e8e6e1;
+  --body: #c9cdd2;      /* 11.4:1 on --bg */
+  --muted: #a6aeb6;     /*  8.6:1 */
+  --dim: #98a0a8;       /*  6.9:1 — the dimmest text used anywhere */
+
+  --accent: #f5a524;
+  --accent-deep: #1d1809;
+
+  --good: #35c77f;
+  --warn: #f5a524;
+  --bad: #ff4d3d;
+
+  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+  --cond: "Barlow Condensed", "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
+
+  --gutter: clamp(1.15rem, 4vw, 4rem);
+  --maxw: 1180px;
+}
+
+* { box-sizing: border-box; }
+
+html {
+  background: var(--bg);
+  scroll-behavior: smooth;
+  /* The dot nav and the skip link both jump to anchors; without this the
+     sticky header lands on top of the heading it just scrolled to. */
+  scroll-padding-top: 88px;
+}
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--body);
+  font-family: var(--sans);
+  font-weight: 300;
+  font-size: 16px;
+  line-height: 1.65;
+  -webkit-font-smoothing: antialiased;
+  overflow-x: hidden;
+}
+
+/* A faint engineering grid, fixed so the page slides over it. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.022) 1px, transparent 1px);
+  background-size: 64px 64px;
+}
+
+.wrap {
+  width: 100%;
+  max-width: var(--maxw);
+  margin: 0 auto;
+  padding-inline: var(--gutter);
+  position: relative;
+  z-index: 1;
+}
+
+.label {
+  font-family: var(--cond);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .17em;
+  text-transform: uppercase;
+  color: var(--dim);
+}
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+
+/* Visible focus everywhere. A keyboard user has to be able to see where
+   they are, and the default ring disappears against this ground. */
+a:focus-visible, button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 3px;
+}
+
+.skip {
+  position: fixed;
+  top: 10px; left: 10px;
+  z-index: 200;
+  transform: translateY(-160%);
+  background: var(--accent);
+  color: #14181d;
+  font-family: var(--cond);
+  font-size: 13px;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  padding: 9px 16px;
+  transition: transform .18s ease;
+}
+.skip:focus { transform: translateY(0); }
+
+/* ============================================================= header == */
+header {
+  position: fixed;
+  inset: 0 0 auto 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 16px var(--gutter);
+  background: transparent;
+  border-bottom: 1px solid transparent;
+  transition: background .3s ease, border-color .3s ease, padding .3s ease;
+}
+header.scrolled {
+  background: rgba(13,16,19,.88);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  border-bottom-color: var(--line);
+  padding-block: 10px;
+}
+.mark {
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  background: var(--accent);
+  color: #14181d;
+  font-family: var(--cond);
+  font-weight: 700;
+  font-size: 18px;
+}
+.wordmark {
+  font-family: var(--cond);
+  font-size: 22px;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.header-sub { font-size: 10px; }
+@media (max-width: 860px) { .header-sub { display: none; } }
+.spacer { flex: 1; }
+
+/* ============================================================ buttons == */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  height: 46px;
+  padding: 0 24px;
+  background: var(--accent);
+  color: #14181d;
+  border: 1px solid var(--accent);
+  font-family: var(--cond);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background .2s ease, color .2s ease, transform .2s ease;
+}
+.btn:hover { background: #ffc05c; border-color: #ffc05c; transform: translateY(-1px); }
+.btn svg { transition: transform .22s ease; }
+.btn:hover svg { transform: translateX(3px); }
+.btn-sm { height: 36px; padding: 0 16px; font-size: 13px; }
+.btn-lg { height: 54px; padding: 0 32px; font-size: 17px; }
+.btn-ghost {
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--line);
+}
+.btn-ghost:hover { background: var(--raised); border-color: var(--muted); transform: translateY(-1px); }
+
+/* =========================================== scroll rail + dot nav ==== */
+.rail {
+  position: fixed;
+  left: 22px; top: 22vh; bottom: 22vh;
+  width: 3px;
+  z-index: 50;
+  background: var(--line);
+}
+.rail-weld {
+  position: absolute; left: -3px;
+  width: 9px; height: 2px;
+  background: var(--line);
+}
+.rail-pig {
+  position: absolute; left: -3.5px; top: 0;
+  width: 10px; height: 20px;
+  background: var(--accent);
+  box-shadow: 0 0 16px rgba(245,165,36,.55);
+  transform: translateY(-50%);
+}
+.rail-pct {
+  position: absolute; left: 16px; top: 0;
+  font-size: 10px;
+  color: var(--dim);
+  transform: translateY(-50%);
+}
+@media (max-width: 1080px) { .rail { display: none; } }
+
+.dots {
+  position: fixed;
+  right: 22px; top: 50%;
+  transform: translateY(-50%);
+  z-index: 50;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  align-items: flex-end;
+}
+.dots a {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  /* 44px tall hit target while the visible mark stays 9px. */
+  padding-block: 17px;
+  margin-block: -17px;
+}
+.dots a span {
+  width: 9px; height: 9px;
+  border: 1px solid var(--dim);
+  background: transparent;
+  transition: background .2s ease, border-color .2s ease, transform .2s ease;
+}
+.dots a::before {
+  content: attr(data-label);
+  order: -1;
+  font-family: var(--cond);
+  font-size: 11px;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  opacity: 0;
+  transform: translateX(6px);
+  transition: opacity .2s ease, transform .2s ease;
+  white-space: nowrap;
+}
+.dots a:hover::before, .dots a:focus-visible::before { opacity: 1; transform: translateX(0); }
+.dots a:hover span { border-color: var(--accent); transform: scale(1.15); }
+.dots a.on span { background: var(--accent); border-color: var(--accent); }
+.dots a.on::before { opacity: 1; transform: translateX(0); color: var(--accent); }
+@media (max-width: 1080px) { .dots { display: none; } }
+
+/* =============================================================== hero == */
+main { position: relative; z-index: 1; }
+
+section {
+  position: relative;
+  padding-block: clamp(5rem, 11vh, 9rem);
+}
+
+#hero {
+  min-height: 100svh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding-top: 132px;
+  overflow: hidden;
+}
+
+/* The WebGL canvas. Sits behind the copy, never takes a pointer event, and
+   is removed from the DOM entirely if the context cannot be created. */
+.pipe-gl {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 0;
+  pointer-events: none;
+  display: block;
+}
+
+/* Flat fallback, underneath the canvas. Three bands that read as a lit pipe
+   so the hero is never an empty rectangle when WebGL is unavailable. */
+.pipe-flat {
+  position: absolute;
+  left: 0; right: 0;
+  top: 58%;
+  height: 210px;
+  transform: translateY(-50%) rotate(-3deg) scaleX(1.2);
+  z-index: 0;
+  opacity: .5;
+  pointer-events: none;
+}
+.pipe-flat span { position: absolute; left: -5%; right: -5%; display: block; }
+.pipe-flat span:nth-child(1) {
+  top: 0; height: 66px;
+  background: linear-gradient(180deg, #232a31, #39424c 55%, #1b2026);
+}
+.pipe-flat span:nth-child(2) {
+  top: 66px; height: 76px;
+  background: linear-gradient(180deg, #0b0d10, #1a1610 60%, #0b0d10);
+}
+.pipe-flat span:nth-child(3) {
+  top: 142px; height: 66px;
+  background: linear-gradient(180deg, #1b2026, #2b333c 45%, #12161a);
+}
+/* With the 3D scene live the flat one is redundant. */
+.gl-on .pipe-flat { display: none; }
+
+/* Keeps the type readable over whatever the scene is doing behind it. */
+.hero-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 18% 42%, rgba(13,16,19,.94) 0%, rgba(13,16,19,.62) 42%, rgba(13,16,19,0) 72%),
+    linear-gradient(180deg, rgba(13,16,19,.80) 0%, rgba(13,16,19,0) 26%, rgba(13,16,19,0) 62%, rgba(13,16,19,.92) 100%);
+}
+
+/* Constrain the LINE LENGTH, not the block. Overriding .wrap's own
+   margin-inline here would left-flush the whole hero and break the page's
+   centring at wide widths, which is not what a narrower column means. */
+.hero-copy { z-index: 2; }
+.hero-copy > * { max-width: 860px; }
+
+.eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 22px; }
+.lamp {
+  width: 7px; height: 7px;
+  background: var(--accent);
+  box-shadow: 0 0 12px rgba(245,165,36,.8);
+  flex-shrink: 0;
+}
+
+h1 {
+  margin: 0;
+  font-family: var(--cond);
+  font-size: clamp(4.5rem, 15vw, 11rem);
+  font-weight: 700;
+  line-height: .85;
+  letter-spacing: -.015em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+h1 .thin { color: var(--accent); }
+
+.lede {
+  margin: 30px 0 0;
+  max-width: 620px;
+  font-size: clamp(1rem, 1.5vw, 1.18rem);
+  line-height: 1.7;
+  color: var(--body);
+}
+.lede strong { color: var(--ink); font-weight: 500; }
+
+.hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+
+.hero-note { margin: 20px 0 0; font-size: 13px; color: var(--dim); }
+.hero-note .num { color: var(--accent); font-size: 12.5px; }
+
+.scroll-cue {
+  position: absolute;
+  left: 50%; bottom: 30px;
+  transform: translateX(-50%);
+  z-index: 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  text-decoration: none;
+  padding: 10px 16px;
+}
+.scroll-cue .label { font-size: 10px; }
+.scroll-cue-line {
+  width: 1px; height: 38px;
+  background: linear-gradient(180deg, var(--accent), transparent);
+  animation: cue 2.4s ease-in-out infinite;
+  transform-origin: top;
+}
+@keyframes cue {
+  0%, 100% { transform: scaleY(.35); opacity: .45; }
+  50%      { transform: scaleY(1);   opacity: 1; }
+}
+@media (max-height: 700px) { .scroll-cue { display: none; } }
+
+/* ============================================================ reveals == */
+.reveal {
+  opacity: 0;
+  transform: translate3d(0, 22px, 0);
+  transition: opacity .75s cubic-bezier(.22,.7,.2,1),
+              transform .75s cubic-bezier(.22,.7,.2,1);
+  will-change: opacity, transform;
+}
+.reveal.in { opacity: 1; transform: none; }
+.reveal.d1 { transition-delay: .08s; }
+.reveal.d2 { transition-delay: .16s; }
+.reveal.d3 { transition-delay: .24s; }
+.reveal.d4 { transition-delay: .32s; }
+
+/* If the script never runs, nothing may stay invisible. */
+.no-js .reveal { opacity: 1; transform: none; }
+.no-js .rail, .no-js .dots, .no-js .pipe-gl { display: none; }
+.no-js .stage { opacity: 1; }
+
+/* ========================================================== headings == */
+.section-num {
+  display: block;
+  font-family: var(--cond);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: .2em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin-bottom: 16px;
+}
+h2 {
+  margin: 0 0 20px;
+  font-family: var(--cond);
+  font-size: clamp(2.3rem, 5.2vw, 4rem);
+  font-weight: 600;
+  line-height: 1.02;
+  letter-spacing: .005em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+h2 em { font-style: normal; color: var(--accent); }
+p.body { margin: 0 0 8px; max-width: 640px; font-size: 1rem; color: var(--body); }
+p.body strong { color: var(--ink); font-weight: 500; }
+
+/* ================================================= sticky stage list == */
+.stage-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: clamp(2rem, 6vw, 5rem);
+  margin-top: clamp(2.5rem, 6vh, 5rem);
+  align-items: start;
+}
+@media (max-width: 900px) {
+  .stage-grid { grid-template-columns: minmax(0, 1fr); }
+  .stage-sticky { display: none; }
+}
+
+.stage-sticky { position: sticky; top: 120px; }
+.stage-panel {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 22px 24px 20px;
+}
+.stage-head { display: flex; align-items: baseline; gap: 10px; }
+.stage-n {
+  font-size: 44px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--accent);
+}
+.stage-of { font-size: 11px; }
+.stage-title {
+  margin: 12px 0 18px;
+  font-family: var(--cond);
+  font-size: 27px;
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+
+/* Figures are stacked in one box and cross-faded, so the panel never
+   changes height as the stage advances. */
+.stage-figs { position: relative; width: 100%; aspect-ratio: 3 / 2; }
+.stage-fig {
+  position: absolute;
+  inset: 0;
+  width: 100%; height: 100%;
+  opacity: 0;
+  transform: scale(.97);
+  transition: opacity .45s ease, transform .45s ease;
+}
+.stage-fig.is-on { opacity: 1; transform: none; }
+.scan-box { animation: scan 3.2s ease-in-out infinite; }
+@keyframes scan {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: .35; }
+}
+
+.stage-track { height: 2px; background: var(--line); margin-top: 18px; }
+.stage-track span {
+  display: block;
+  height: 100%;
+  width: 20%;
+  background: var(--accent);
+  transition: width .45s cubic-bezier(.22,.7,.2,1);
+}
+
+.stage-list { list-style: none; margin: 0; padding: 0; }
+.stage {
+  padding: clamp(2rem, 7vh, 4.5rem) 0;
+  border-left: 1px solid var(--line-soft);
+  padding-left: 26px;
+  opacity: .32;
+  transition: opacity .45s ease, border-color .45s ease;
+}
+.stage.on { opacity: 1; border-left-color: var(--accent); }
+.stage-idx { display: block; font-size: 12px; color: var(--accent); margin-bottom: 10px; }
+.stage h3 {
+  margin: 0 0 10px;
+  font-family: var(--cond);
+  font-size: clamp(1.5rem, 3vw, 2rem);
+  font-weight: 600;
+  letter-spacing: .03em;
+  text-transform: uppercase;
+  color: var(--ink);
+}
+.stage p { margin: 0; font-size: .97rem; color: var(--body); max-width: 46ch; }
+.stage p em { font-style: normal; color: var(--accent); }
+@media (max-width: 900px) {
+  /* Nothing is driving the fade on narrow screens, so nothing may be dim. */
+  .stage { opacity: 1; }
+}
+
+/* ============================================================== stats == */
+#proof { padding-block: clamp(3rem, 8vh, 5.5rem); border-block: 1px solid var(--line); background: var(--panel); }
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: clamp(1.5rem, 4vw, 3rem);
+}
+.stat .v {
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(2rem, 4.2vw, 3rem);
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink);
+}
+.stat .v .unit { font-size: .5em; color: var(--dim); }
+.stat .k { margin-top: 10px; font-size: 11px; }
+
+/* ============================================================== stack == */
+.stack-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+  gap: clamp(1.5rem, 3vw, 2.5rem);
+  margin-top: clamp(2rem, 5vh, 3.5rem);
+}
+.stack-col h4 { margin: 0 0 16px; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.chip {
+  display: block;
+  padding: 9px 0;
+  font-size: .9rem;
+  color: var(--muted);
+  border-bottom: 1px solid var(--line-soft);
+}
+.chip b { display: block; color: var(--ink); font-weight: 500; font-size: .95rem; }
+
+.footnote {
+  margin: clamp(2.5rem, 6vh, 4rem) 0 0;
+  padding: 22px 26px;
+  border-left: 2px solid var(--accent);
+  background: var(--panel);
+  max-width: 800px;
+  font-size: .95rem;
+  color: var(--body);
+}
+.footnote strong { color: var(--ink); font-weight: 500; }
+.footnote em { font-style: normal; color: var(--accent); }
+.footnote .num { color: var(--accent); }
+
+/* ================================================================ cta == */
+#cta { text-align: center; }
+#cta .body { margin-inline: auto; }
+#cta .hero-actions { justify-content: center; }
+#cta .hero-note { text-align: center; }
+
+/* ============================================================= footer == */
+footer { border-top: 1px solid var(--line); padding-block: 26px; }
+footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; font-size: 12px; color: var(--dim); }
+
+/* ===================================================== reduced motion == */
+/* Not a courtesy. Everything below either stops or resolves to its final
+   state, and the page stays complete with all motion removed. */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+  }
+  .reveal { opacity: 1; transform: none; }
+  .stage { opacity: 1; }
+  .scroll-cue-line { animation: none; }
+}

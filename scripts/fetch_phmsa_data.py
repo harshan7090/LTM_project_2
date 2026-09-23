@@ -26,6 +26,7 @@ from pathlib import Path
 import requests
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from src.net_trust import enable as _t; _t()  # noqa: E402
 from config.settings import settings  # noqa: E402
 
 PHMSA_URL = (
