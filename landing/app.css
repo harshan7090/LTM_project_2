@@ -27,23 +27,31 @@
 
 /* ============================================================= tokens == */
 :root {
-  --bg: #0d1013;
-  --panel: #14181d;
-  --raised: #1b2026;
-  --line: #252c34;
-  --line-soft: #1c2229;
+  /* Same values as the console (web/src/index.css). The landing and the
+     product must not look like two different companies, and the fastest
+     way to make them look like two is to let their palettes drift. */
+  --bg: #0d1110;
+  --panel: #151b19;
+  --raised: #202824;
+  --sunken: #080b0a;
+  --line: #2a322e;
+  --line-soft: #1e2522;
 
-  --ink: #e8e6e1;
-  --body: #c9cdd2;      /* 11.4:1 on --bg */
-  --muted: #a6aeb6;     /*  8.6:1 */
-  --dim: #98a0a8;       /*  6.9:1 — the dimmest text used anywhere */
+  --ink: #f1f3ed;        /* 13.5:1 on --bg */
+  --body: #c9cec7;       /*  9.5:1 */
+  --muted: #a6aea8;      /*  6.7:1 */
+  --dim: #8d9690;        /*  5.0:1 — the dimmest text used anywhere */
 
-  --accent: #f5a524;
-  --accent-deep: #1d1809;
+  /* Two accents, two jobs: green is identity and interaction, amber is
+     caution and nothing else. */
+  --accent: #b8d04a;
+  --accent-deep: #9dbb3a;
+  --on-accent: #0d1110;  /* 11.0:1 on the accent fill; white fails at 1.7 */
+  --amber: #d99a32;
 
-  --good: #35c77f;
-  --warn: #f5a524;
-  --bad: #ff4d3d;
+  --good: #7ea64a;
+  --warn: #e0a23b;
+  --bad: #e4735c;
 
   --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
@@ -120,7 +128,7 @@ a:focus-visible, button:focus-visible {
   z-index: 200;
   transform: translateY(-160%);
   background: var(--accent);
-  color: #14181d;
+  color: var(--on-accent);
   font-family: var(--cond);
   font-size: 13px;
   letter-spacing: .12em;
@@ -145,7 +153,7 @@ header {
   transition: background .3s ease, border-color .3s ease, padding .3s ease;
 }
 header.scrolled {
-  background: rgba(13,16,19,.88);
+  background: rgba(13,17,16,.88);
   backdrop-filter: blur(14px);
   -webkit-backdrop-filter: blur(14px);
   border-bottom-color: var(--line);
@@ -155,7 +163,7 @@ header.scrolled {
   width: 26px; height: 26px;
   display: grid; place-items: center;
   background: var(--accent);
-  color: #14181d;
+  color: var(--on-accent);
   font-family: var(--cond);
   font-weight: 700;
   font-size: 18px;
@@ -180,7 +188,7 @@ header.scrolled {
   height: 46px;
   padding: 0 24px;
   background: var(--accent);
-  color: #14181d;
+  color: var(--on-accent);
   border: 1px solid var(--accent);
   font-family: var(--cond);
   font-size: 15px;
@@ -191,7 +199,7 @@ header.scrolled {
   white-space: nowrap;
   transition: background .2s ease, color .2s ease, transform .2s ease;
 }
-.btn:hover { background: #ffc05c; border-color: #ffc05c; transform: translateY(-1px); }
+.btn:hover { background: var(--accent-deep); border-color: var(--accent-deep); transform: translateY(-1px); }
 .btn svg { transition: transform .22s ease; }
 .btn:hover svg { transform: translateX(3px); }
 .btn-sm { height: 36px; padding: 0 16px; font-size: 13px; }
@@ -220,7 +228,7 @@ header.scrolled {
   position: absolute; left: -3.5px; top: 0;
   width: 10px; height: 20px;
   background: var(--accent);
-  box-shadow: 0 0 16px rgba(245,165,36,.55);
+  box-shadow: 0 0 16px rgba(184,208,74,.5);
   transform: translateY(-50%);
 }
 .rail-pct {
@@ -292,6 +300,43 @@ section {
   overflow: hidden;
 }
 
+/* ------------------------------------------------- industrial environment --
+   Three planes at different depths. Each is translated a different amount
+   by the scroll, which is what produces parallax: the horizon barely moves,
+   the pipe rack at your feet moves most. That DIFFERENCE is the depth cue -
+   without it the layers read as flat wallpaper. */
+.env {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+}
+.env-plane {
+  position: absolute;
+  left: -4%; right: -4%;
+  bottom: 0;
+  will-change: transform;
+}
+.env-plane svg { display: block; width: 100%; height: 100%; }
+.env-far  { height: 42%; bottom: 20%; opacity: .55; }
+.env-mid  { height: 26%; bottom: 12%; opacity: .7; }
+.env-near { height: 14%; bottom: 0;   opacity: .85; }
+
+/* Atmospheric depth. Distant structures have to sit BEHIND air, or the
+   scene reads as a sticker book rather than a landscape. */
+.env-haze {
+  position: absolute;
+  inset: 0;
+  background:
+    linear-gradient(180deg,
+      var(--bg) 0%,
+      rgba(13,17,16,.35) 26%,
+      rgba(13,17,16,.10) 48%,
+      rgba(13,17,16,.72) 82%,
+      var(--bg) 100%);
+}
+
 /* The WebGL canvas. Sits behind the copy, never takes a pointer event, and
    is removed from the DOM entirely if the context cannot be created. */
 .pipe-gl {
@@ -353,7 +398,7 @@ section {
 .lamp {
   width: 7px; height: 7px;
   background: var(--accent);
-  box-shadow: 0 0 12px rgba(245,165,36,.8);
+  box-shadow: 0 0 12px rgba(184,208,74,.75);
   flex-shrink: 0;
 }
 
@@ -379,6 +424,37 @@ h1 .thin { color: var(--accent); }
 .lede strong { color: var(--ink); font-weight: 500; }
 
 .hero-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 34px; }
+
+/* Scope readout. A row of rules rather than boxes: four bordered cards
+   under a headline is the most template-looking thing a hero can do. */
+.hero-scope {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0;
+  margin: 34px 0 0;
+  border-top: 1px solid var(--line);
+  border-bottom: 1px solid var(--line);
+  max-width: 560px;
+}
+.hero-scope > div {
+  padding: 12px 22px 12px 0;
+  margin-right: 22px;
+  border-right: 1px solid var(--line-soft);
+}
+.hero-scope > div:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
+.hero-scope dt { font-size: 9px; margin: 0; }
+.hero-scope dd {
+  margin: 5px 0 0;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--ink);
+}
+.hero-scope dd span { font-size: 11px; color: var(--dim); }
+@media (max-width: 560px) {
+  .hero-scope > div { padding-right: 14px; margin-right: 14px; }
+  .hero-scope dd { font-size: 18px; }
+}
 
 .hero-note { margin: 20px 0 0; font-size: 13px; color: var(--dim); }
 .hero-note .num { color: var(--accent); font-size: 12.5px; }
@@ -613,4 +689,7 @@ footer .wrap { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; f
   .reveal { opacity: 1; transform: none; }
   .stage { opacity: 1; }
   .scroll-cue-line { animation: none; }
+  /* Parallax is motion tied to scrolling, which is exactly what triggers
+     vestibular discomfort. The planes stay put. */
+  .env-plane { transform: none !important; }
 }

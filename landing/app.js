@@ -53,6 +53,11 @@
   var railPct = doc.getElementById('rail-pct');
   var heroCopy = doc.getElementById('hero-copy');
   var hero = doc.getElementById('hero');
+  var planes = [
+    { el: doc.querySelector('.env-far'),  rate: 0.10 },
+    { el: doc.querySelector('.env-mid'),  rate: 0.26 },
+    { el: doc.querySelector('.env-near'), rate: 0.52 }
+  ].filter(function (pl) { return pl.el; });
 
   /* ------------------------------------------------------ 3D scene ---- */
   /* If the context cannot be created the canvas is removed outright, which
@@ -94,6 +99,18 @@
     current += Math.abs(gap) < 0.0002 ? gap : gap * LERP;
 
     if (scene) scene.setProgress(current);
+
+    /* Parallax. Each plane moves at its own rate, so the horizon lags and
+       the near rack races - that difference is the depth cue. Driven by the
+       DAMPED value, not raw scroll, so the planes carry the same weight as
+       the 3D scene instead of twitching a frame ahead of it. */
+    if (!reduced) {
+      for (var i = 0; i < planes.length; i++) {
+        planes[i].el.style.transform =
+          'translate3d(0,' + (current * planes[i].rate * 260).toFixed(1) + 'px,0)';
+      }
+    }
+
     if (railPig) railPig.style.top = (current * 100).toFixed(2) + '%';
     if (railPct) railPct.textContent = String(Math.round(current * 100)).padStart(2, '0');
 

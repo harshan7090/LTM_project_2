@@ -274,13 +274,13 @@
     // Circumferential weld bands at regular axial stations.
     '    float weld = smoothstep(0.972, 0.995, abs(sin(vUv.x * 3.14159 * 7.0)));',
 
-    '    vec3 steel = mix(vec3(0.196, 0.219, 0.247), vec3(0.325, 0.361, 0.400), grain);',
+    '    vec3 steel = mix(vec3(0.118, 0.137, 0.129), vec3(0.290, 0.325, 0.306), grain);',
     '    vec3 rust  = mix(vec3(0.357, 0.180, 0.070), vec3(0.596, 0.290, 0.086), grain);',
     '    col = mix(steel, rust, pit * 0.92);',
-    '    col = mix(col, vec3(0.42, 0.46, 0.50), weld * 0.55);',
+    '    col = mix(col, vec3(0.38, 0.42, 0.40), weld * 0.55);',
     '    col *= 0.30 + 0.80 * diff;',
     // Pits sit in shadow: they are holes, so they lose the rim light too.
-    '    col += vec3(0.96, 0.65, 0.14) * fres * 0.22 * (1.0 - pit * 0.75);',
+    '    col += vec3(0.72, 0.82, 0.29) * fres * 0.22 * (1.0 - pit * 0.75);',
     '  } else {',
     // ---- crude ---------------------------------------------------------
     '    float bands = sin(vUv.x * 60.0 - uTime * 5.2) * 0.5 + 0.5;',
@@ -288,8 +288,8 @@
     '    vec3 deep = vec3(0.035, 0.043, 0.051);',
     '    vec3 lift = vec3(0.129, 0.110, 0.067);',
     '    col = mix(deep, lift, swirl * 0.75 + bands * 0.10);',
-    '    col += vec3(0.96, 0.65, 0.14) * pow(max(dot(reflect(-L, N), V), 0.0), 42.0) * 0.85;',
-    '    col += vec3(0.96, 0.65, 0.14) * fres * 0.30;',
+    '    col += vec3(0.72, 0.82, 0.29) * pow(max(dot(reflect(-L, N), V), 0.0), 42.0) * 0.85;',
+    '    col += vec3(0.72, 0.82, 0.29) * fres * 0.30;',
     '    col *= 0.55 + 0.60 * diff;',
     '  }',
 
