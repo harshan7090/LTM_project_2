@@ -39,6 +39,8 @@ export default function Schedule({ onOpenSegment }: { onOpenSegment: (id: string
     <div className="flex flex-col gap-3">
       <Module
         title="Solver Parameters"
+        num="01"
+        sub="CP-SAT · travel charged to the same crew-day budget"
         id="CP-SAT"
         right={
           <span className="label" style={{ fontSize: 9 }}>
@@ -93,7 +95,8 @@ export default function Schedule({ onOpenSegment }: { onOpenSegment: (id: string
       </Module>
 
       {!result && !run.isPending && (
-        <Module title="Schedule" id="OUT">
+        <Module title="Inspection Schedule" num="02"
+                sub="Statutory deadline is a hard constraint" id="OUT">
           <EmptyState>
             Set crew capacity and run the optimiser to generate a schedule.
           </EmptyState>
@@ -187,7 +190,7 @@ export default function Schedule({ onOpenSegment }: { onOpenSegment: (id: string
             </Module>
           )}
 
-          <Module title="Crew Load" id="CREW">
+          <Module title="Crew Load" num="03" sub="Crew-days per period" id="CREW">
             <div className="flex flex-col gap-2">
               {result.crews.map((c) => {
                 const pct = c.days_available ? (c.days_used / c.days_available) * 100 : 0;

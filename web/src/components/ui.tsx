@@ -51,7 +51,7 @@ export function Button({
         'transition-colors disabled:cursor-not-allowed disabled:opacity-45',
         size === 'sm' ? 'px-3 py-[5px] text-[11px]' : 'px-4 py-[7px] text-[12px]',
         variant === 'primary' &&
-          'bg-accent text-[#17130a] font-bold hover:brightness-110',
+          'bg-accent text-[var(--color-on-accent)] font-bold hover:brightness-110',
         variant === 'ghost' &&
           'border border-line text-ink font-semibold hover:border-accent hover:text-accent',
         variant === 'subtle' && 'text-muted font-semibold hover:text-accent',
@@ -86,10 +86,15 @@ export function Panel({
  * panels carry a channel or tag number.
  */
 export function Module({
-  title, id, right, className, bodyClass, children, bracket = true,
+  title, id, num, sub, right, className, bodyClass, children, bracket = true,
 }: {
   title: string;
   id?: string;
+  /** Section number, e.g. "03". Drawing-sheet convention: it gives every
+   *  panel an address you can refer to out loud. */
+  num?: string;
+  /** Small technical line under the title — units, scope, provenance. */
+  sub?: string;
   right?: ReactNode;
   className?: string;
   bodyClass?: string;
@@ -105,7 +110,15 @@ export function Module({
       )}
     >
       <header className="flex items-center gap-2 border-b border-line-soft px-3 py-[7px]">
-        <h2 className="label" style={{ color: 'var(--color-muted)' }}>{title}</h2>
+        {num && (
+          <span className="num text-[9.5px] text-accent" aria-hidden="true">{num}</span>
+        )}
+        <div className="min-w-0">
+          <h2 className="label" style={{ color: 'var(--color-muted)' }}>{title}</h2>
+          {sub && (
+            <div className="num mt-[2px] text-[9px] leading-none text-dim">{sub}</div>
+          )}
+        </div>
         {id && <span className="num text-[10px] text-dim">[{id}]</span>}
         <div className="flex-1" />
         {right}
@@ -256,3 +269,116 @@ export const fmt = {
   /** Zero-padded row index, so the row-number column stays a fixed width. */
   idx: (n: number) => String(n).padStart(4, '0'),
 };
+
+/* ====================================================== technical detail == */
+
+/**
+ * A small labelled reading — coordinates, units, provenance.
+ *
+ * These are the details that make an instrument look like an instrument: a
+ * panel that states its own scope and units reads as engineered, while the
+ * same panel with a bare number reads as a template.
+ */
+export function Telemetry({
+  items, className,
+}: {
+  items: { k: string; v: ReactNode }[];
+  className?: string;
+}) {
+  return (
+    <div className={cx('flex flex-wrap items-center gap-x-4 gap-y-1', className)}>
+      {items.map(({ k, v }) => (
+        <span key={k} className="flex items-baseline gap-1.5">
+          <span className="label" style={{ fontSize: 8 }}>{k}</span>
+          <span className="num text-[10.5px] text-muted">{v}</span>
+        </span>
+      ))}
+    </div>
+  );
+}
+
+/** Inline proportional bar. Thin, because it sits inside a table row. */
+export function Meter({
+  value, max, tone = 'var(--color-accent)', width = 54,
+}: {
+  value: number;
+  max: number;
+  tone?: string;
+  width?: number;
+}) {
+  const pct = Math.max(Math.min((value / (max || 1)) * 100, 100), 2);
+  return (
+    <span
+      className="relative inline-block h-[3px] bg-raised align-middle"
+      style={{ width }}
+      role="presentation"
+    >
+      <span
+        className="absolute inset-y-0 left-0 block"
+        style={{ width: `${pct}%`, background: tone }}
+      />
+    </span>
+  );
+}
+
+/**
+ * A failure, stated in the language of the system.
+ *
+ * "Something went wrong" tells an operator nothing they can act on. Naming
+ * what could not be reached, and when it last worked, tells them whether to
+ * retry, wait, or call someone.
+ */
+export function ErrorState({
+  what, detail, lastOk, onRetry,
+}: {
+  what: string;
+  detail?: string;
+  lastOk?: string;
+  onRetry?: () => void;
+}) {
+  return (
+    <div className="border border-critical/40 bg-critical/[0.06] px-4 py-4">
+      <div className="mb-1.5 flex items-center gap-2">
+        <span className="lamp lamp-critical" />
+        <span className="label text-critical">{what}</span>
+      </div>
+      {detail && (
+        <p className="max-w-[52ch] text-[11.5px] leading-relaxed text-muted">{detail}</p>
+      )}
+      {lastOk && (
+        <div className="mt-2.5">
+          <span className="label" style={{ fontSize: 8 }}>Last successful sync</span>
+          <div className="num text-[11px] text-secondary">{lastOk}</div>
+        </div>
+      )}
+      {onRetry && (
+        <Button variant="ghost" size="sm" className="mt-3" onClick={onRetry}>
+          Retry connection
+        </Button>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Loading placeholder shaped like the thing it replaces.
+ *
+ * A spinner says "wait"; a skeleton says "wait, and here is what is coming",
+ * which stops the layout jumping when the data lands.
+ */
+export function Skeleton({
+  rows = 3, className,
+}: { rows?: number; className?: string }) {
+  return (
+    <div className={cx('flex flex-col gap-2', className)} aria-hidden="true">
+      {Array.from({ length: rows }).map((_, i) => (
+        <div
+          key={i}
+          className="skeleton h-[11px] bg-raised"
+          // Staggered widths so it reads as text, not as a progress bar.
+          style={{ width: `${88 - (i % 3) * 17}%`, animationDelay: `${i * 90}ms` }}
+        />
+      ))}
+    </div>
+  );
+}

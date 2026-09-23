@@ -63,6 +63,8 @@ export default function Maintenance({ onOpenSegment }: { onOpenSegment: (id: str
     <div className="flex flex-col gap-3">
       <Module
         title="Dispatch Parameters"
+        num="01"
+        sub="CP-SAT · orders split by trade"
         id="CP-SAT"
         right={
           <span className="label" style={{ fontSize: 9 }}>
@@ -114,7 +116,8 @@ export default function Maintenance({ onOpenSegment }: { onOpenSegment: (id: str
       </Module>
 
       {!result && !run.isPending && (
-        <Module title="Work Orders" id="WO">
+        <Module title="Work Orders" num="02"
+                sub="Assigned to the nearest qualified crew" id="WO">
           <EmptyState>
             Repair plans are generated from the highest-risk segments, split by
             trade, then assigned to the nearest qualified technician.
@@ -169,7 +172,8 @@ export default function Maintenance({ onOpenSegment }: { onOpenSegment: (id: str
               "add capacity" is not actionable while "add a second coating
               crew in the Western zone" is. */}
           {result.capacity_gaps.length > 0 && (
-            <Module title="Capacity Shortfall by Trade" id="GAP">
+            <Module title="Capacity Shortfall by Trade" num="03"
+                    sub="Where the solver came closest to running out" id="GAP">
               <p className="mb-2.5 text-[11.5px] leading-relaxed text-muted">
                 {result.relaxed_immediate
                   ? 'Urgent work could not all be covered, so that requirement was relaxed. '
@@ -262,7 +266,8 @@ export default function Maintenance({ onOpenSegment }: { onOpenSegment: (id: str
           </div>
 
           {tab === 'crew' && (
-            <Module title="Technician Utilisation" id="CREW">
+            <Module title="Technician Utilisation" num="04"
+                    sub="Share of available crew-days consumed" id="CREW">
               <div className="flex flex-col gap-2.5">
                 {result.technicians.map((t) => {
                   const workPct = t.days_available

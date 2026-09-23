@@ -131,7 +131,9 @@ export default function Assistant({ segmentId, onClearScope }: Props) {
       <div className="grid gap-3 [grid-template-columns:minmax(0,1fr)] xl:[grid-template-columns:minmax(0,1.5fr)_minmax(330px,1fr)]">
         {/* ---------------- chat ---------------- */}
         <Module
-          title="Assistant"
+          title="Corvex Intelligence"
+          num="01"
+          sub="Domain-grounded · retrieval over cited standards"
           id={segmentId ?? 'FLEET'}
           bodyClass=""
           className="flex min-h-[540px] flex-col"
@@ -173,7 +175,7 @@ export default function Assistant({ segmentId, onClearScope }: Props) {
                   )}
                   style={{ fontSize: 9, color: 'inherit' }}
                 >
-                  {m.role === 'assistant' ? 'AI' : 'OPR'}
+                  {m.role === 'assistant' ? 'CVX' : 'OPR'}
                 </span>
                 <div
                   className={cx(
@@ -196,16 +198,26 @@ export default function Assistant({ segmentId, onClearScope }: Props) {
                     />
                   )}
 
+                  {/* Evidence, not a footnote.
+                      The governing rule of this product is that the language
+                      model explains decisions it did not make. Showing what
+                      it actually read - prominently, as a labelled rail - is
+                      what makes that claim checkable rather than asserted. */}
                   {m.citations && m.citations.length > 0 && (
-                    <div className="mt-2 border-t border-line-soft pt-1.5">
-                      <div className="label mb-1" style={{ fontSize: 9 }}>
-                        Retrieved sources
+                    <div className="mt-3 border-l-2 border-accent/50 pl-3">
+                      <div className="label mb-1.5 text-accent" style={{ fontSize: 8.5 }}>
+                        Evidence · {m.citations.length} source
+                        {m.citations.length === 1 ? '' : 's'}
                       </div>
-                      <ol className="flex flex-col gap-[2px]">
+                      <ol className="flex flex-col gap-1">
                         {m.citations.map((c, n) => (
-                          <li key={n} className="flex gap-1.5 text-[10.5px] text-dim">
-                            <span className="num text-accent">[{n + 1}]</span>
-                            <span>{c.citation}</span>
+                          <li key={n} className="flex items-baseline gap-2">
+                            <span className="num text-[9.5px] text-accent">
+                              [{n + 1}]
+                            </span>
+                            <span className="text-[10.5px] leading-snug text-muted">
+                              {c.citation}
+                            </span>
                           </li>
                         ))}
                       </ol>
@@ -348,7 +360,8 @@ function PhotoAnalysis({
 
   return (
     <div className="flex flex-col gap-4">
-      <Module title="Pipeline Photo Analysis" id="VIS">
+      <Module title="Corrosion Vision" num="02"
+              sub="Visual indication only · never enters the calculation" id="VIS">
         <p className="mb-3.5 text-xs leading-relaxed text-muted">
           Upload a photo of a pipeline asset. The model assesses visible corrosion morphology
           and coating condition, then checks it against this segment's predicted rate and

@@ -338,6 +338,8 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
       <div className="grid gap-3 [grid-template-columns:1fr] xl:[grid-template-columns:minmax(0,1.25fr)_minmax(400px,1fr)]">
         <Module
           title="Fleet Position"
+          num="01"
+          sub="Web Mercator · marker size is risk"
           id={me.region ? me.region.toUpperCase().slice(0, 3) : 'ALL'}
           bodyClass="p-2 pb-1"
           right={
@@ -353,7 +355,8 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
                            selected={selected} onPick={setSelected} />}
         </Module>
 
-        <Module title="Risk Matrix" id="5×5"
+        <Module title="Risk Matrix" num="02"
+                sub="Likelihood percentile × consequence score" id="5×5"
                 right={<span className="label" style={{ fontSize: 9 }}>
                   likelihood × consequence
                 </span>}>
@@ -373,6 +376,8 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
       )}>
         <Module
           title="Segment Register"
+          num="03"
+          sub="Ranked by risk · rate in mils per year"
           id={`${tableRows.length}`}
           bodyClass=""
           right={

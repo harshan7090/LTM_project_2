@@ -68,7 +68,8 @@ export default function Fleet() {
       </div>
 
       <div className="grid gap-3 [grid-template-columns:repeat(auto-fit,minmax(330px,1fr))]">
-        <Module title="Predicted Corrosion Rate Distribution" id="HIST">
+        <Module title="Predicted Corrosion Rate Distribution" num="01"
+                sub="Mils per year · whole fleet" id="HIST">
           <div style={{ height: 235 }}>
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={histogram} margin={{ top: 4, right: 8, bottom: 18, left: -14 }}>
@@ -118,7 +119,8 @@ export default function Fleet() {
           </div>
         </Module>
 
-        <Module title="Average Predicted Rate by Region" id="REG">
+        <Module title="Average Predicted Rate by Zone" num="02"
+                sub="Mils per year · mean of scored segments" id="REG">
           <div className="flex flex-col gap-2.5">
             {regions.map(([region, rate]) => (
               <div key={region}>

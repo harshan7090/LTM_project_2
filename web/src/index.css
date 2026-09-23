@@ -60,6 +60,9 @@
   --color-accent: #b8d04a;
   --color-accent-deep: #9dbb3a;
   --color-accent-soft: #1d2410;
+  /* Ink for text sitting ON the accent fill. 11.0:1 on the green.
+     White fails at 1.7:1, so it is never an option on these fills. */
+  --color-on-accent: #0d1110;
   --color-amber: #d99a32;
   --color-amber-deep: #c47d22;
 
@@ -105,6 +108,7 @@ html.light {
   --color-accent: #56691a;
   --color-accent-deep: #435213;
   --color-accent-soft: #e3e9c6;
+  --color-on-accent: #f4f5f0;
   --color-amber: #8a5a05;
   --color-amber-deep: #6d4704;
 
@@ -244,6 +248,12 @@ body {
 }
 
 /* --- boot sweep ---------------------------------------------------------- */
+.skeleton { animation: skeleton 1.4s ease-in-out infinite; }
+@keyframes skeleton {
+  0%, 100% { opacity: 0.38; }
+  50%      { opacity: 0.72; }
+}
+
 .boot-sweep { animation: boot-sweep 1.1s ease-in-out infinite; }
 @keyframes boot-sweep {
   0%   { transform: translateX(-100%); }
@@ -271,7 +281,7 @@ body {
   }
   /* Shortening a LOOP turns it into a flicker, which is worse than the
      animation it replaced. These stop outright. */
-  .lamp-critical, .boot-sweep { animation: none !important; }
+  .lamp-critical, .boot-sweep, .skeleton { animation: none !important; }
   .view-enter { animation: none !important; opacity: 1; transform: none; }
 }
 
