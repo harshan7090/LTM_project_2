@@ -276,10 +276,15 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
           drewTile = true;
         }
       }
-      // Knock the imagery back so amber and red read on top of it. A
-      // satellite basemap at full strength competes with the data.
+      /* Knock the basemap back so the segments read on top of it. The
+         amount depends on WHAT the basemap is: photographic imagery is far
+         busier than a vector basemap - every field boundary and cloud is
+         competing detail - so it needs noticeably more. A single fixed
+         value either washes out the vector styles or loses the data on
+         satellite. */
       if (drewTile) {
-        g.fillStyle = 'rgba(13,16,19,0.46)';
+        const photographic = config?.provider === 'satellite';
+        g.fillStyle = photographic ? 'rgba(8,11,10,0.60)' : 'rgba(8,11,10,0.44)';
         g.fillRect(0, 0, view.w, view.h);
       }
     }

@@ -65,41 +65,85 @@ class TileError(RuntimeError):
     """Upstream could not supply the tile."""
 
 
+# Geoapify's raster tile API serves VECTOR-DERIVED basemaps only. There is
+# no satellite style on it - asking for one returns a 400 listing these as
+# the alternatives. Kept here so a bad MAP_STYLE fails with a useful message
+# instead of an opaque upstream 400.
+GEOAPIFY_STYLES = frozenset({
+    "osm-carto", "carto", "dark-matter", "klokantech-basic", "osm-bright",
+    "toner", "toner-grey", "osm-liberty", "maptiler-3d", "positron",
+    "dark-matter-brown", "dark-matter-dark-grey", "dark-matter-dark-purple",
+    "dark-matter-purple-roads", "dark-matter-yellow-roads", "osm-bright-grey",
+    "osm-bright-smooth", "positron-blue", "positron-red", "vector",
+})
+
+DEFAULT_GEOAPIFY_STYLE = "dark-matter-brown"
+
+
 def provider() -> str:
     """Which upstream is in play, after resolving 'auto'."""
     configured = (settings.MAP_PROVIDER or "auto").lower()
-    if configured == "auto":
-        return "geoapify" if settings.GEOAPIFY_API_KEY else "osm"
-    return configured
+    if configured != "auto":
+        return configured
+    # Satellite needs no key and is what an operations map usually wants, so
+    # it leads. Geoapify only wins 'auto' when a key is present AND the
+    # configured style is one it actually serves.
+    if settings.GEOAPIFY_API_KEY and style() in GEOAPIFY_STYLES:
+        return "geoapify"
+    return "satellite"
 
 
 def available() -> bool:
-    return provider() in ("geoapify", "osm")
+    return provider() in ("geoapify", "osm", "satellite")
 
 
 def attribution() -> str:
-    if provider() == "geoapify":
+    p = provider()
+    if p == "geoapify":
         return "© Geoapify · © OpenStreetMap contributors"
+    if p == "satellite":
+        # Esri's terms require the source to be shown wherever the imagery is.
+        return "Imagery © Esri, Maxar, Earthstar Geographics"
     return "© OpenStreetMap contributors"
 
 
 def style() -> str:
-    return settings.MAP_STYLE or "satellite"
+    return (settings.MAP_STYLE or "").strip().lower() or "satellite"
 
 
 def _upstream_url(z: int, x: int, y: int) -> str:
-    if provider() == "geoapify":
+    p = provider()
+
+    if p == "satellite":
+        # Esri World Imagery. Free, keyless, and genuinely photographic -
+        # which Geoapify's raster endpoint cannot supply at any price.
+        # NOTE the axis order: Esri's path is /{z}/{row}/{col}, so y comes
+        # before x. Swapping them silently returns a tile from the wrong
+        # place rather than an error, which is the worst kind of bug.
+        return (
+            "https://server.arcgisonline.com/ArcGIS/rest/services/"
+            f"World_Imagery/MapServer/tile/{z}/{y}/{x}"
+        )
+
+    if p == "geoapify":
         key = settings.GEOAPIFY_API_KEY
         if not key:
-            # Geoapify answers 401 for satellite with no key. Saying so here
-            # is far more useful than relaying an opaque 401 to the console.
             raise TileError(
                 "MAP_PROVIDER is geoapify but GEOAPIFY_API_KEY is empty. "
                 "Add a free key from https://myprojects.geoapify.com/ to .env, "
-                "or set MAP_PROVIDER=osm."
+                "or set MAP_PROVIDER=satellite."
             )
-        return (f"https://maps.geoapify.com/v1/tile/{style()}/{z}/{x}/{y}.png"
+        st = style()
+        if st not in GEOAPIFY_STYLES:
+            raise TileError(
+                f"MAP_STYLE '{st}' is not a Geoapify raster style. Geoapify "
+                "serves vector-derived basemaps only - it has no satellite "
+                "imagery. Use MAP_PROVIDER=satellite for imagery, or one of: "
+                + ", ".join(sorted(GEOAPIFY_STYLES))
+            )
+        return (f"https://maps.geoapify.com/v1/tile/{st}/{z}/{x}/{y}.png"
                 f"?apiKey={key}")
+
     return f"https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 
@@ -133,8 +177,8 @@ def fetch(z: int, x: int, y: int) -> tuple[bytes, str]:
 
     if r.status_code == 401:
         raise TileError(
-            f"{provider()} rejected the key for style '{style()}'. Satellite "
-            "requires a valid GEOAPIFY_API_KEY."
+            f"{provider()} rejected the credential for style '{style()}'. "
+            "Check GEOAPIFY_API_KEY in .env."
         )
     if r.status_code != 200:
         raise TileError(f"tile host returned {r.status_code}")
