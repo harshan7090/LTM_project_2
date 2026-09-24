@@ -260,15 +260,22 @@ export interface SceneHandle {
 }
 
 export function create(canvas: HTMLCanvasElement, reduced: boolean): SceneHandle | null {
+  /* Only the renderer constructor used to be guarded, which covered the
+     one failure everybody thinks of — no WebGL — and none of the ones that
+     actually happen: a driver refusing a texture size, a shader that will
+     not compile on some GPU, a geometry parameter out of range. Any of
+     those threw out of here and took the whole page's start-up with it.
+     The caller guards this too; belt and braces, because a landing page
+     that cannot draw a pipe should still be a readable landing page. */
   let renderer: WebGLRenderer;
   try {
     renderer = new WebGLRenderer({
       canvas, antialias: true, alpha: false, powerPreference: 'high-performance',
     });
+    if (!renderer.getContext()) return null;
   } catch {
     return null;
   }
-  if (!renderer.getContext()) return null;
 
   renderer.setClearColor(C.skyHaze, 1);
   renderer.outputColorSpace = SRGBColorSpace;

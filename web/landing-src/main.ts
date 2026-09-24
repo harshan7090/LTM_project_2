@@ -30,9 +30,24 @@ import { ScrollTrigger } from 'gsap/ScrollTrigger';
 
 import { create as createScene, type SceneHandle } from './scene';
 
-gsap.registerPlugin(ScrollTrigger);
+/* Registered inside a guard and BEFORE anything else can throw. A failure
+   here used to take the whole module down at top level - which no
+   try/catch inside `boot` could catch, because boot never ran. */
+try {
+  gsap.registerPlugin(ScrollTrigger);
+} catch (err) {
+  // eslint-disable-next-line no-console
+  console.error('[corvex] ScrollTrigger failed to register:', err);
+}
 
 const doc = document;
+
+/* Armed FIRST, before any other top-level statement can throw. The previous
+   placement was at the end of the file, so a failure above it meant the
+   timer was never set and the loader stayed up forever. CSS carries a
+   longer backstop; this is the quick one for a healthy-but-erroring load. */
+window.setTimeout(() => dismissLoader(), 2200);
+
 const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 /* Fraction of the remaining distance closed each frame. Lower is heavier.
@@ -46,27 +61,68 @@ let scene: SceneHandle | null = null;
 
 /* ----------------------------------------------------------- boot ------- */
 
+/* THE LOADER MUST NEVER BE ABLE TO TRAP THE PAGE.
+ *
+ *   It did. `dismissLoader()` was the last statement in boot, and nothing
+ *   above it was guarded — so any throw anywhere in startup left a
+ *   full-screen cover over a page that was otherwise fine, forever. The
+ *   symptom was "LOADING INFRASTRUCTURE" and nothing after it.
+ *
+ *   Three defences, because one is not enough:
+ *
+ *     1. Every startup step is independently guarded. A failure in the 3D
+ *        scene must not stop the counters wiring up, and vice versa —
+ *        these are unrelated concerns that happened to share a function.
+ *     2. The loader is dismissed in a `finally`, so it goes even if
+ *        everything above it failed.
+ *     3. A failsafe timer dismisses it regardless, covering the case where
+ *        boot never runs at all — a parse error in the bundle, say, which
+ *        no try/catch inside the bundle can catch.
+ *
+ *   Failures are reported to the console rather than swallowed. A silent
+ *   catch would have turned this bug into a permanently blank hero with no
+ *   way to find out why.
+ */
+function step(name: string, fn: () => void) {
+  try {
+    fn();
+  } catch (err) {
+    // eslint-disable-next-line no-console
+    console.error(`[corvex] ${name} failed:`, err);
+  }
+}
+
 function boot() {
   doc.documentElement.classList.remove('no-js');
 
-  const canvas = doc.getElementById('pipe-gl') as HTMLCanvasElement | null;
-  if (canvas) {
-    scene = createScene(canvas, reduced);
-    if (scene) {
-      doc.documentElement.classList.add('gl-on');
-    } else {
-      // An empty <canvas> left in place is a hole in the hero. Remove it and
-      // let the flat fallback underneath do its job.
-      canvas.remove();
-    }
-  }
+  try {
+    step('scene', () => {
+      const canvas = doc.getElementById('pipe-gl') as HTMLCanvasElement | null;
+      if (!canvas) return;
+      try {
+        scene = createScene(canvas, reduced);
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error('[corvex] 3D scene failed to build:', err);
+        scene = null;
+      }
+      if (scene) {
+        doc.documentElement.classList.add('gl-on');
+      } else {
+        // An empty <canvas> is a hole in the hero. Remove it and let the
+        // flat fallback underneath do its job.
+        canvas.remove();
+      }
+    });
 
-  wireScroll();
-  wireChapters();
-  wireCounters();
-  wireMatrix();
-  wireNav();
-  dismissLoader();
+    step('scroll', wireScroll);
+    step('chapters', wireChapters);
+    step('counters', wireCounters);
+    step('matrix', wireMatrix);
+    step('nav', wireNav);
+  } finally {
+    dismissLoader();
+  }
 }
 
 /* --------------------------------------------------------- scroll ------- */
@@ -279,13 +335,21 @@ function wireNav() {
    perform. It leaves as soon as the scene is up — there is no minimum
    display time, because a progress bar that outlasts the thing it measures
    is theatre. */
+/* Safe to call repeatedly: boot's `finally` and the failsafe timer will
+   both reach it, and on a healthy load they race. */
+let loaderGone = false;
+
 function dismissLoader() {
+  if (loaderGone) return;
+  loaderGone = true;
   const el = doc.getElementById('loader');
   if (!el) return;
   const go = () => {
     el.classList.add('done');
     window.setTimeout(() => el.remove(), 700);
-    ScrollTrigger.refresh();
+    // Guarded on its own: a ScrollTrigger failure must not be the reason
+    // the cover stays up.
+    try { ScrollTrigger.refresh(); } catch { /* layout will settle anyway */ }
   };
   // One frame after boot, so the scene has painted behind it.
   requestAnimationFrame(() => requestAnimationFrame(go));

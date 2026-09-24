@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadF
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.types import Scope as _Scope  # noqa: E402
 from pydantic import BaseModel
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -412,6 +413,26 @@ def list_technicians(user: auth.User = Depends(require_role("supervisor", "admin
     svc = get_service()
     regions = sorted({s["region"] for s in svc.list_segments()})
     return {"technicians": [t.to_dict() for t in wo.default_technicians(regions)]}
+
+
+class NoCacheStatic(StaticFiles):
+    """Static files that the browser must revalidate.
+
+    landing/bundle.js has a FIXED name - no content hash - so a browser
+    will happily serve a stale copy from cache after a rebuild, and the
+    page then runs old script against new markup. That mismatch is
+    invisible and produces exactly the kind of start-up failure that is
+    impossible to diagnose from the outside.
+
+    no-cache does not mean "do not store"; it means "ask first". The
+    browser keeps the file and revalidates, so a repeat load is still a
+    304 rather than a full download.
+    """
+
+    def file_response(self, *args, **kwargs):  # type: ignore[override]
+        resp = super().file_response(*args, **kwargs)
+        resp.headers["Cache-Control"] = "no-cache, must-revalidate"
+        return resp
 
 
 @app.get("/api/map/config")
@@ -950,7 +971,7 @@ def console():
 # rendered as a black screen with only the header, because every .reveal
 # element stayed at opacity:0 and no JavaScript ran to reveal them.
 if LANDING_DIR.exists():
-    app.mount("/landing", StaticFiles(directory=str(LANDING_DIR)), name="landing")
+    app.mount("/landing", NoCacheStatic(directory=str(LANDING_DIR)), name="landing")
 
 # Mounted last: explicit routes above win, everything else (assets, the
 # vanilla fallback console, favicons) is served from here.

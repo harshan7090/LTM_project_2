@@ -142,13 +142,32 @@ a:focus-visible, button:focus-visible {
 .skip:focus { transform: translateY(0); }
 
 /* ============================================================= loader == */
+/* THE COVER MUST BE ABLE TO LIFT ITSELF.
+ *
+ *   This loader trapped the page: it is dismissed by script, and any throw
+ *   during start-up left a full-screen cover over a page that was
+ *   otherwise fine. The script's own guards cannot help when the failure is
+ *   at module top level, or when the bundle fails to parse at all - no
+ *   try/catch inside a file can catch that file failing to load.
+ *
+ *   So the last line of defence is CSS, which cannot be stopped by a
+ *   JavaScript error. The loader hides itself after four seconds no matter
+ *   what. Script adding .done still hides it immediately on a healthy load,
+ *   which is every load where anything works at all. */
 .loader {
   position: fixed; inset: 0; z-index: 250;
   display: grid; place-items: center;
   background: var(--bg);
   transition: opacity .55s ease, visibility .55s ease;
+  animation: loader-failsafe .45s ease 4s forwards;
 }
-.loader.done { opacity: 0; visibility: hidden; pointer-events: none; }
+@keyframes loader-failsafe {
+  to { opacity: 0; visibility: hidden; pointer-events: none; }
+}
+.loader.done {
+  opacity: 0; visibility: hidden; pointer-events: none;
+  animation: none;
+}
 .loader-inner { display: flex; flex-direction: column; align-items: center; gap: 14px; }
 .loader-mark {
   width: 34px; height: 34px; display: grid; place-items: center;
