@@ -172,170 +172,80 @@ function wireChapters() {
 
 /* -------------------------------------------------------- counters ------ */
 
-/* Mechanical counters.
+/* Counters.
  *
- * Each digit is a column of 0-9 behind a one-digit window; the column
- * slides to bring the right numeral into view. A plain count-up only
- * changes text, which reads as a number being set. This reads as an
- * instrument settling, which is the right register for a page about
- * infrastructure — and it is where the "running numbers" feel comes from.
+ * MODELLED ON THE REFERENCE, AFTER READING IT RATHER THAN GUESSING
  *
- * Higher-order digits are given a longer travel and land later, so the
- * figure resolves left to right the way a real odometer does rather than
- * every wheel stopping at once.
+ *   The site this was asked to match renders each figure as ONE span with
+ *   tabular numerals and replaces its text as it counts:
+ *
+ *     <span class="sr-only">183+ frictions diagnosed across our practice</span>
+ *     <p aria-hidden="true" class="flex items-baseline gap-2 font-mono">
+ *       <span class="tabular-nums">183</span><span>·</span><span>frictions diagnosed</span>
+ *     </p>
+ *
+ *   No digit columns, no odometer. An earlier version here rolled each
+ *   digit behind a window, which is a more elaborate effect than the
+ *   reference uses and reads as mechanical rather than quick — almost
+ *   certainly why it did not feel right.
+ *
+ *   What actually carries it is the easing and the type: a fast start, a
+ *   long tail, monospaced tabular figures so the number does not jitter in
+ *   width as it climbs, and the label sitting quietly beside it.
+ *
+ * ACCESSIBILITY, ALSO FROM THE REFERENCE
+ *
+ *   A counter mid-flight reads aloud as nonsense — a screen reader would
+ *   announce every intermediate value. So the visible figure is
+ *   aria-hidden and a screen-reader-only span carries the final sentence.
+ *   That pattern is lifted straight from the reference, and it is the part
+ *   most people copying this effect leave out.
  */
-function buildOdometer(el: HTMLElement, text: string): HTMLElement[] {
-  el.textContent = '';
-  const wrap = doc.createElement('span');
-  wrap.className = 'od';
-  const cols: HTMLElement[] = [];
-
-  for (const ch of text) {
-    if (ch >= '0' && ch <= '9') {
-      const win = doc.createElement('span');
-      win.className = 'od-d';
-      const col = doc.createElement('span');
-      col.className = 'od-col';
-      // 0-9 then 0 again, so a wheel can always roll forwards into place
-      // instead of snapping backwards past eight digits.
-      for (let d = 0; d <= 10; d++) {
-        const cell = doc.createElement('span');
-        cell.textContent = String(d % 10);
-        col.appendChild(cell);
-      }
-      win.appendChild(col);
-      wrap.appendChild(win);
-      cols.push(col);
-      col.dataset.target = ch;
-    } else {
-      // Separators and decimal points do not spin.
-      const sep = doc.createElement('span');
-      sep.className = 'od-sep';
-      sep.textContent = ch;
-      wrap.appendChild(sep);
-    }
-  }
-  el.appendChild(wrap);
-  return cols;
-}
-
 function wireCounters() {
   const els = gsap.utils.toArray<HTMLElement>('[data-count]');
 
   els.forEach((el) => {
     const to = parseFloat(el.dataset.count ?? '0');
     const dp = parseInt(el.dataset.decimals ?? '0', 10);
-    const finalText = dp ? to.toFixed(dp) : Math.round(to).toLocaleString();
+    const suffix = el.dataset.suffix ?? '';
+    const format = (v: number) =>
+      (dp ? v.toFixed(dp) : Math.round(v).toLocaleString()) + suffix;
+    const finalText = format(to);
+
+    /* The live figure is hidden from assistive tech and a static sentence
+       put beside it, so nobody hears the count. */
+    el.setAttribute('aria-hidden', 'true');
+    const label = el.dataset.label;
+    if (label && !el.dataset.srDone) {
+      const sr = doc.createElement('span');
+      sr.className = 'sr-only';
+      sr.textContent = `${finalText} ${label}`;
+      el.parentElement?.insertBefore(sr, el);
+      el.dataset.srDone = '1';
+    }
 
     if (reduced) { el.textContent = finalText; return; }
 
-    const cols = buildOdometer(el, finalText);
-    if (!cols.length) { el.textContent = finalText; return; }
+    el.textContent = format(0);
+    const state = { v: 0 };
 
     ScrollTrigger.create({
       trigger: el,
-      start: 'top 84%',
+      start: 'top 86%',
       once: true,
       onEnter: () => {
-        cols.forEach((col, i) => {
-          const digit = parseInt(col.dataset.target ?? '0', 10);
-          // Each cell is exactly 1em tall, so the offset is in em and the
-          // maths does not depend on the rendered font size.
-          const rest = -digit;
-          // Leading digits spin further and settle later.
-          const depth = (cols.length - i) / cols.length;
-          gsap.fromTo(
-            col,
-            { y: `${-(digit + 10 + Math.round(depth * 20))}em` },
-            {
-              y: `${rest}em`,
-              duration: 1.5 + depth * 0.9,
-              // Quick, then settling — a wheel coming to rest against its
-              // detent, not a linear slide.
-              ease: 'power4.out',
-              delay: i * 0.055,
-            },
-          );
+        gsap.to(state, {
+          v: to,
+          duration: 2.0,
+          /* Fast out of the gate, then a long settle. This easing is what
+             the effect actually is - the number is legible almost at once
+             and then eases into place, rather than crawling linearly to it. */
+          ease: 'expo.out',
+          onUpdate: () => { el.textContent = format(state.v); },
+          onComplete: () => { el.textContent = finalText; },
         });
       },
     });
-  });
-}
-
-/* ---------------------------------------------------------- matrix ------ */
-
-/* The 5x5, populated from the real scored fleet.
- *
- * These counts are the actual output of the 5,000-segment demonstration
- * dataset, not illustrative numbers - the same grid the console draws. The
- * band is a pure function of row x column, which matters because the four
- * band hues are STATUS colours: they are not far enough apart for hue to
- * carry an ordered scale by itself, so position and a printed count carry
- * it too.
- */
-const MATRIX_COUNTS: number[][] = [
-  // Almost certain -> Rare, each row Negligible -> Severe.
-  [63, 38, 44, 6, 0],
-  [158, 95, 84, 13, 0],
-  [332, 208, 167, 40, 3],
-  [526, 383, 285, 50, 5],
-  [1105, 731, 563, 98, 3],
-];
-
-const BAND_COLOR = ['#7ea64a', '#d99a32', '#d8794a', '#e4735c'];
-
-function bandFor(likelihood: number, consequence: number): string {
-  const p = likelihood * consequence;
-  return p <= 4 ? BAND_COLOR[0] : p <= 9 ? BAND_COLOR[1]
-    : p <= 14 ? BAND_COLOR[2] : BAND_COLOR[3];
-}
-
-function wireMatrix() {
-  const grid = doc.getElementById('matrix-grid');
-  if (!grid) return;
-
-  const max = Math.max(...MATRIX_COUNTS.flat());
-  const rowLabels = ['Almost certain', 'Likely', 'Possible', 'Unlikely', 'Rare'];
-  const colLabels = ['Negligible', 'Minor', 'Moderate', 'Major', 'Severe'];
-
-  const cells: HTMLElement[] = [];
-  MATRIX_COUNTS.forEach((row, r) => {
-    const likelihood = 5 - r;
-    row.forEach((n, c) => {
-      const cell = doc.createElement('i');
-      const empty = n === 0;
-      // Opacity carries density WITHIN the band hue, so a busy cell reads
-      // hotter without inventing a fifth colour.
-      const weight = empty ? 0 : 0.2 + 0.62 * Math.sqrt(n / max);
-      if (empty) {
-        cell.style.border = '1px dashed var(--line)';
-      } else {
-        cell.style.background = bandFor(likelihood, c + 1);
-        cell.style.opacity = String(weight.toFixed(3));
-      }
-      cell.title = `${rowLabels[r]} likelihood · ${colLabels[c]} consequence — `
-        + `${n.toLocaleString()} segments`;
-      const b = doc.createElement('b');
-      b.textContent = empty ? '' : n.toLocaleString();
-      // The count must stay legible as the fill opacity drops beneath it.
-      b.style.opacity = String(Math.min(1 / Math.max(weight, 0.34), 1).toFixed(2));
-      cell.appendChild(b);
-      grid.appendChild(cell);
-      cells.push(cell);
-    });
-  });
-
-  if (reduced) return;
-
-  // Cells rise in reading order as the section arrives, so the grid builds
-  // itself rather than appearing complete.
-  gsap.from(cells, {
-    opacity: 0,
-    scale: 0.82,
-    duration: 0.5,
-    ease: 'power2.out',
-    stagger: { each: 0.012, from: 'start' },
-    scrollTrigger: { trigger: grid, start: 'top 80%', once: true },
   });
 }
 

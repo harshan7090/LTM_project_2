@@ -99,22 +99,32 @@ body {
 }
 .num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
 
-/* ------------------------------------------------------------ odometer --
-   Mechanical counters: each digit is a column of 0-9 sliding behind a
-   one-digit window. A plain count-up just changes text; this reads as a
-   physical instrument settling, which is the right register for a page
-   about infrastructure. */
-/* Only the one-digit window clips. Putting overflow:hidden on the wrapper
-   too would shear the descender off a comma. */
-.od { display: inline-flex; align-items: flex-end; }
-.od-d {
-  display: inline-block; overflow: hidden;
-  height: 1em; line-height: 1em;
+/* Screen-reader-only. Carries the finished sentence for a counter whose
+   visible figure is aria-hidden while it animates - a counter mid-flight
+   reads aloud as nonsense. */
+.sr-only {
+  position: absolute; width: 1px; height: 1px;
+  padding: 0; margin: -1px; overflow: hidden;
+  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
 }
-.od-col { display: block; will-change: transform; }
-.od-col span { display: block; height: 1em; line-height: 1em; }
-/* Separators share the window height so digits and commas sit on one line. */
-.od-sep { display: inline-block; height: 1em; line-height: 1em; }
+
+/* A live indicator beside a figure, as the reference pairs them. The ring
+   expands and fades; the core stays put, so it reads as a pulse rather
+   than as something throbbing. */
+.pulse {
+  position: relative; display: inline-flex;
+  width: 7px; height: 7px; flex-shrink: 0;
+}
+.pulse i, .pulse b {
+  position: absolute; inset: 0; border-radius: 50%;
+  background: var(--accent); display: block;
+}
+.pulse i { animation: pulse-ring 2.4s cubic-bezier(.2,.6,.3,1) infinite; }
+@keyframes pulse-ring {
+  0%   { transform: scale(1); opacity: .65; }
+  70%  { transform: scale(3.2); opacity: 0; }
+  100% { transform: scale(3.2); opacity: 0; }
+}
 
 a:focus-visible, button:focus-visible {
   outline: 2px solid var(--accent);
@@ -285,11 +295,6 @@ section { position: relative; }
 .hero-copy { max-width: 900px; }
 
 .eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 26px; }
-.lamp {
-  width: 7px; height: 7px; border-radius: 50%; background: var(--accent);
-  box-shadow: 0 0 0 2px rgba(184,208,74,.18), 0 0 11px rgba(184,208,74,.6);
-  flex-shrink: 0;
-}
 
 h1 {
   margin: 0;
@@ -559,7 +564,7 @@ footer {
   }
   /* Shortening a LOOP turns it into a flicker, which is worse than the
      animation. These stop outright. */
-  .cue-line, .loader-bar span { animation: none !important; }
+  .cue-line, .loader-bar span, .pulse i { animation: none !important; }
   .chapter-copy, .hero-copy { opacity: 1 !important; transform: none !important; }
 }
 
