@@ -18,12 +18,49 @@ cd C:\Users\T9990\Desktop\integrityai_v2\integrityai
 Already set up and just want it running?
 
 ```powershell
-.\venv\Scripts\Activate.ps1
-python -m uvicorn backend.main:app --reload --port 8010
+.\run.ps1
 ```
 
 Then open **http://localhost:8010** (landing page) or
 **http://localhost:8010/console** (the application).
+
+`run.ps1` calls the venv interpreter by full path, so you do not have to
+activate anything, and it names the process holding the port instead of
+failing with a WinSock number. `-Port 8011` moves it, `-NoReload` turns off
+the auto-restart watcher.
+
+### If you run uvicorn by hand instead
+
+Two things bite on a stock Windows box, and neither error says what is
+actually wrong.
+
+**`python` is probably not Python.** On most Windows installs
+`C:\Users\<you>\AppData\Local\Microsoft\WindowsApps\python.exe` comes first on
+PATH. It is a Microsoft Store stub, not an interpreter — it prints *"Python
+was not found; run without arguments to install from the Microsoft Store"* and
+exits, and it wins over the venv unless the venv is activated first. So either
+activate it:
+
+```powershell
+.\venv\Scripts\Activate.ps1          # prompt gains a (venv) prefix
+python -m uvicorn backend.main:app --reload --port 8010
+```
+
+or skip activation and name the interpreter outright:
+
+```powershell
+.\venv\Scripts\python.exe -m uvicorn backend.main:app --reload --port 8010
+```
+
+**A port already in use reads like a crash.** uvicorn prints
+`Application startup complete` and *then*
+`[Errno 10048] ... only one usage of each socket address`. The app did not
+start and then crash — it never bound at all. Find what is holding the port:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8010 -State Listen |
+  Select-Object OwningProcess, @{n='Name';e={(Get-Process -Id $_.OwningProcess).ProcessName}}
+```
 
 Everything below is the long version.
 

@@ -20,7 +20,7 @@
  *   nowhere is worse than a missing one, because it reads as broken rather
  *   than as unbuilt.
  */
-import { useCallback, useEffect, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import {
   CalendarRange, LayoutGrid, LogOut, Moon, Sparkles, Sun, TrendingUp, Truck,
@@ -30,12 +30,23 @@ import { api, auth } from './lib/api';
 import type { Me } from './lib/types';
 import Login from './views/Login';
 import Dashboard from './views/Dashboard';
-import Assistant from './views/Assistant';
-import Schedule from './views/Schedule';
-import Fleet from './views/Fleet';
-import Maintenance from './views/Maintenance';
 import SegmentDrawer from './components/SegmentDrawer';
-import { cx, useTheme } from './components/ui';
+import { cx, Sweep, useTheme } from './components/ui';
+import corvexMark from './assets/corvex-mark.webp';
+
+/* The four views an operator does NOT land on are fetched when they are
+   first opened, not at sign-in.
+ *
+ * Assistant is the one that matters: it pulls react-markdown and remark-gfm,
+ * which together were the largest single thing in the bundle — and it was
+ * being downloaded by every user on every load, including the ones who only
+ * ever look at the Dashboard. Dashboard itself stays eagerly imported
+ * because it is what sign-in lands on, and splitting it would only add a
+ * round trip in front of the first paint. */
+const Assistant = lazy(() => import('./views/Assistant'));
+const Schedule = lazy(() => import('./views/Schedule'));
+const Fleet = lazy(() => import('./views/Fleet'));
+const Maintenance = lazy(() => import('./views/Maintenance'));
 
 type View = 'dashboard' | 'assistant' | 'schedule' | 'maintenance' | 'fleet';
 
@@ -158,13 +169,18 @@ export default function App() {
               transition is short on purpose — an operator switching views is
               working, not being presented to. */}
           <div key={view} className="view-enter">
-            {view === 'dashboard' && <Dashboard me={me} onAskAssistant={askAssistant} />}
-            {view === 'assistant' && (
-              <Assistant segmentId={scopeId} onClearScope={() => setScopeId(null)} />
-            )}
-            {view === 'schedule' && <Schedule onOpenSegment={setDrawerId} />}
-            {view === 'maintenance' && <Maintenance onOpenSegment={setDrawerId} />}
-            {view === 'fleet' && <Fleet />}
+            {/* The fallback is the same Sweep the views use for their own
+                data, so a cold view chunk and a slow query look alike to
+                the operator instead of introducing a second vocabulary. */}
+            <Suspense fallback={<Sweep label="Loading view…" />}>
+              {view === 'dashboard' && <Dashboard me={me} onAskAssistant={askAssistant} />}
+              {view === 'assistant' && (
+                <Assistant segmentId={scopeId} onClearScope={() => setScopeId(null)} />
+              )}
+              {view === 'schedule' && <Schedule onOpenSegment={setDrawerId} />}
+              {view === 'maintenance' && <Maintenance onOpenSegment={setDrawerId} />}
+              {view === 'fleet' && <Fleet />}
+            </Suspense>
           </div>
         </main>
       </div>
@@ -212,11 +228,8 @@ function CommandBar({
     <header className="sticky top-0 z-40 flex h-[38px] flex-shrink-0 items-stretch
                        border-b border-line bg-panel/95 backdrop-blur">
       <div className="flex w-[186px] flex-shrink-0 items-center gap-2 border-r border-line px-3">
-        <div className="grid h-[19px] w-[19px] place-items-center bg-accent
-                        font-[family-name:var(--font-label)] text-[13px] font-bold
-                        leading-none text-[#0d1110]">
-          C
-        </div>
+        <img src={corvexMark} alt="" width={22} height={22}
+             className="brand-logo h-[22px] w-[22px] rounded-[4px]" />
         <span className="font-[family-name:var(--font-label)] text-[15px] font-semibold
                          uppercase leading-none tracking-[0.13em] text-ink">
           Corvex
@@ -347,11 +360,8 @@ function Boot() {
   return (
     <div className="grid min-h-screen place-items-center">
       <div className="flex flex-col items-center gap-3">
-        <div className="grid h-8 w-8 place-items-center bg-accent
-                        font-[family-name:var(--font-label)] text-[20px] font-bold
-                        leading-none text-[#0d1110]">
-          C
-        </div>
+        <img src={corvexMark} alt="" width={56} height={56}
+             className="brand-logo h-14 w-14 rounded-[8px]" />
         <div className="label-lg" style={{ fontSize: 15 }}>Corvex</div>
         <div className="h-[2px] w-[132px] overflow-hidden bg-raised">
           <div className="boot-sweep h-full w-1/3 bg-accent" />

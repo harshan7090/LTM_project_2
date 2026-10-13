@@ -1,6 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import type { ReactNode } from 'react';
-import type { RiskBand } from '../lib/types';
+import type { RateCategory, RiskBand } from '../lib/types';
 
 export function cx(...parts: (string | false | null | undefined)[]): string {
   return parts.filter(Boolean).join(' ');
@@ -32,6 +32,44 @@ export function RiskBadge({ band, bare = false }: { band: RiskBand; bare?: boole
   );
 }
 
+/* Colour for each corrosion-rate category. The four band tokens, so a rate
+   reads on the same low-to-severe ramp as the risk matrix: green, amber,
+   orange, red. */
+export const RATE_TEXT: Record<RateCategory, string> = {
+  low: 'text-[var(--color-band-low)]',
+  moderate: 'text-[var(--color-band-moderate)]',
+  high: 'text-[var(--color-band-high)]',
+  severe: 'text-[var(--color-band-severe)]',
+};
+export const RATE_BG: Record<RateCategory, string> = {
+  low: 'bg-[var(--color-band-low)]',
+  moderate: 'bg-[var(--color-band-moderate)]',
+  high: 'bg-[var(--color-band-high)]',
+  severe: 'bg-[var(--color-band-severe)]',
+};
+
+/** Client-side mirror of src/integrity/corrosion_class.py, for rows that
+ *  predate the field. The server's category wins whenever it is present. */
+export function rateCategoryOf(mpy: number, given?: RateCategory): RateCategory {
+  if (given) return given;
+  if (mpy < 1) return 'low';
+  if (mpy < 5) return 'moderate';
+  if (mpy <= 10) return 'high';
+  return 'severe';
+}
+
+/** The corrosion rate's own severity, as a lamp and a label. */
+export function RateBadge({ category }: { category: RateCategory }) {
+  return (
+    <span className={cx('inline-flex items-center gap-1.5', RATE_TEXT[category])}>
+      <span className={cx('lamp', category === 'severe' && 'lamp-critical')} />
+      <span className="label" style={{ color: 'inherit', fontSize: 10 }}>
+        {category} rate
+      </span>
+    </span>
+  );
+}
+
 // --------------------------------------------------------------- buttons ---
 
 type ButtonProps = React.ButtonHTMLAttributes<HTMLButtonElement> & {
@@ -50,8 +88,7 @@ export function Button({
         'font-[family-name:var(--font-label)] uppercase tracking-[0.11em]',
         'transition-colors disabled:cursor-not-allowed disabled:opacity-45',
         size === 'sm' ? 'px-3 py-[5px] text-[11px]' : 'px-4 py-[7px] text-[12px]',
-        variant === 'primary' &&
-          'bg-accent text-[var(--color-on-accent)] font-bold hover:brightness-110',
+        variant === 'primary' && 'btn-gloss font-bold',
         variant === 'ghost' &&
           'border border-line text-ink font-semibold hover:border-accent hover:text-accent',
         variant === 'subtle' && 'text-muted font-semibold hover:text-accent',
@@ -246,15 +283,20 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
 // ----------------------------------------------------------------- theme ---
 
+const THEME_KEY = 'integrityai_theme_v2';
+
 export function useTheme() {
+  // The key was bumped when the console moved to black and crimson, so a
+  // stored "light" from the old green-on-paper look does not hide the new
+  // default. The toggle still works and is remembered under the new key.
   const [theme, setTheme] = useState<'dark' | 'light'>(
-    () => (localStorage.getItem('integrityai_theme') as 'dark' | 'light') || 'dark',
+    () => (localStorage.getItem(THEME_KEY) as 'dark' | 'light') || 'dark',
   );
 
   useEffect(() => {
     document.documentElement.classList.toggle('dark', theme === 'dark');
     document.documentElement.classList.toggle('light', theme === 'light');
-    localStorage.setItem('integrityai_theme', theme);
+    localStorage.setItem(THEME_KEY, theme);
   }, [theme]);
 
   return { theme, toggle: () => setTheme((t) => (t === 'dark' ? 'light' : 'dark')) };

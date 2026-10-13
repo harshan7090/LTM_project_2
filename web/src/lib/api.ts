@@ -95,9 +95,15 @@ export const api = {
    *  The tile route is authenticated, and an <img src> cannot carry a
    *  bearer token — so the bytes are fetched here, where the header can be
    *  attached, and handed back as a blob URL the caller assigns to an
-   *  Image. The caller owns revoking it. */
-  async mapTile(key: string): Promise<string> {
-    const res = await fetch(`/api/map/tile/${key}.png`, { headers: headers() });
+   *  Image. The caller owns revoking it.
+   *
+   *  `signal` lets the map abandon tiles that have scrolled out of view.
+   *  That matters more than it looks: the browser runs at most six requests
+   *  to this origin at once, so stale tiles from a view the user has already
+   *  zoomed past would otherwise queue ahead of the tiles actually on
+   *  screen. */
+  async mapTile(key: string, signal?: AbortSignal): Promise<string> {
+    const res = await fetch(`/api/map/tile/${key}.png`, { headers: headers(), signal });
     if (!res.ok) await toError(res);
     return URL.createObjectURL(await res.blob());
   },

@@ -27,7 +27,9 @@ export default function Schedule({ onOpenSegment }: { onOpenSegment: (id: string
     onSuccess: (r) => {
       setResult(r);
       if (r.warnings.length) toast(r.warnings[0], 'error');
-      else toast(`${r.optimal ? 'Optimal' : 'Feasible'} schedule in ${r.solve_ms} ms`, 'success');
+      else toast(`${statusLabel(r) === 'NEAR-OPTIMAL'
+        ? `Near-optimal schedule (within ${r.optimality_gap_pct}%)`
+        : r.optimal ? 'Optimal schedule' : 'Feasible schedule'} in ${r.solve_ms} ms`, 'success');
     },
     onError: (e: Error) => toast(e.message, 'error'),
   });
@@ -124,9 +126,9 @@ export default function Schedule({ onOpenSegment }: { onOpenSegment: (id: string
           </div>
 
           <div className="flex items-center gap-2 border border-line-soft bg-panel px-3 py-1.5">
-            <span className={cx('lamp', result.optimal ? 'text-normal' : 'text-elevated')} />
-            <span className="label" style={{ color: result.optimal ? 'var(--color-normal)' : 'var(--color-elevated)' }}>
-              {result.status}
+            <span className={cx('lamp', solvedWell(result) ? 'text-normal' : 'text-elevated')} />
+            <span className="label" style={{ color: solvedWell(result) ? 'var(--color-normal)' : 'var(--color-elevated)' }}>
+              {statusLabel(result)}
             </span>
             <span className="text-[11.5px] text-muted">{result.message}</span>
           </div>
@@ -190,34 +192,50 @@ export default function Schedule({ onOpenSegment }: { onOpenSegment: (id: string
             </Module>
           )}
 
-          <Module title="Crew Load" num="03" sub="Crew-days per period" id="CREW">
-            <div className="flex flex-col gap-2">
+          <Module title="Crew Load" num="03"
+                  sub="One inspection crew per zone, working out of its depot" id="CREW">
+            <div className="flex flex-col gap-2.5">
               {result.crews.map((c) => {
-                const pct = c.days_available ? (c.days_used / c.days_available) * 100 : 0;
+                const travel = c.travel_days ?? 0;
+                const committed = c.days_committed ?? c.days_used + travel;
+                const workPct = c.days_available ? (c.days_used / c.days_available) * 100 : 0;
+                const travelPct = c.days_available ? (travel / c.days_available) * 100 : 0;
                 return (
                   <div key={c.crew_id}>
-                    <div className="mb-1 flex items-baseline justify-between">
+                    <div className="mb-1 flex items-baseline justify-between gap-3">
                       <span className="flex items-baseline gap-2 text-[12px]">
                         <span className="num text-[10px] text-dim">{c.crew_id}</span>
                         {c.name}
+                        {c.depot && (
+                          <span className="label text-dim" style={{ fontSize: 8.5 }}>
+                            {c.depot} depot
+                          </span>
+                        )}
                       </span>
-                      <span className="num text-[11px] text-muted">
-                        {c.days_used}/{c.days_available}d
+                      <span className="num whitespace-nowrap text-[11px] text-muted">
+                        {c.days_used}d work + {travel}d travel = {committed.toFixed(1)}/{c.days_available}d
                         <span className="text-dim"> · {c.segments} seg</span>
                       </span>
                     </div>
-                    <div className="relative h-[5px] bg-raised">
-                      <div
-                        className={cx('h-full', pct > 90 ? 'bg-elevated' : 'bg-accent')}
-                        style={{ width: `${Math.min(pct, 100)}%` }}
-                      />
-                      {/* 100% capacity marker */}
+                    {/* Work and travel stacked: the solver charges both to the
+                        same budget, so showing work alone understated the load. */}
+                    <div className="relative flex h-[6px] bg-raised">
+                      <div className="h-full bg-accent" style={{ width: `${Math.min(workPct, 100)}%` }} />
+                      <div className="h-full bg-elevated/60"
+                           style={{ width: `${Math.min(travelPct, 100 - Math.min(workPct, 100))}%` }} />
                       <span className="absolute inset-y-0 right-0 w-px bg-line" />
                     </div>
                   </div>
                 );
               })}
             </div>
+            <p className="mt-3 flex flex-wrap items-center gap-2 border-t border-line-soft pt-2.5 text-[10.5px] text-dim">
+              <span className="inline-block h-[6px] w-[14px] bg-accent" /> inspection work
+              <span className="inline-block h-[6px] w-[14px] bg-elevated/60" /> travel from the depot
+              <span className="ml-1">
+                — each segment below is inspected by its zone&apos;s crew in the period shown.
+              </span>
+            </p>
           </Module>
 
           {Array.from({ length: result.periods }, (_, p) => {
@@ -315,4 +333,17 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       {children}
     </label>
   );
+}
+
+/** Solved well: optimal, or proven within the solver's 1% gap limit.
+ *  Anything looser is shown in the caution colour. */
+function solvedWell(r: { optimal: boolean; optimality_gap_pct?: number | null }): boolean {
+  return r.optimal || (r.optimality_gap_pct != null && r.optimality_gap_pct <= 1);
+}
+
+/** OPTIMAL only for a zero gap; a plan proven within the limit says so. */
+function statusLabel(r: { status: string; optimal: boolean; optimality_gap_pct?: number | null }): string {
+  if (r.optimal) return 'OPTIMAL';
+  if (r.optimality_gap_pct != null && r.optimality_gap_pct <= 1) return 'NEAR-OPTIMAL';
+  return r.status;
 }

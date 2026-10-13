@@ -3,9 +3,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Sparkles, X } from 'lucide-react';
 
 import { api } from '../lib/api';
-import { Pipeline3D } from './Pipeline3D';
-import type { InspectionMethod } from '../lib/types';
-import { Button, RiskBadge, SectionTitle, Sweep, cx, fmt, useToast } from './ui';
+import { PipeLegend, Pipeline3D, pipeModelFrom } from './Pipeline3D';
+import {
+  Button, RATE_TEXT, RateBadge, RiskBadge, SectionTitle, Sweep, cx, fmt, rateCategoryOf,
+  useToast,
+} from './ui';
+import type { InspectionMethod, RateCategory, SegmentDetail } from '../lib/types';
 
 const CATEGORY_TONE: Record<InspectionMethod['category'], string> = {
   indirect: 'text-accent',
@@ -113,7 +116,11 @@ export default function SegmentDrawer({
         {/* header rail, matching the app chrome */}
         <div className="sticky top-0 z-10 flex items-center gap-2 border-b border-line
                         bg-panel px-4 py-2.5">
-          {detail && <RiskBadge band={detail.risk_band} bare />}
+          {detail && (
+            <span title={`Overall risk: ${detail.risk_band}`}>
+              <RiskBadge band={detail.risk_band} bare />
+            </span>
+          )}
           <span className="num text-[14px] font-semibold">
             {detail?.segment_id ?? '—'}
           </span>
@@ -154,62 +161,43 @@ export default function SegmentDrawer({
 
             {tab === 'risk' && (
               <>
-                {/* The segment, rendered from its own numbers.
-                    Pitting density is a function of the predicted rate and
-                    the rim light is its risk band, so two segments never
-                    look alike unless they actually are alike. It is placed
-                    above the readout because a shape is recognised faster
-                    than a number is read. */}
+                {/* The segment, rendered from its own record: coating,
+                    wall, metal loss, diameter, material, cathodic protection,
+                    repairs, product, soil and age. No risk colour on it; the
+                    risk band has its own place below. Placed above the
+                    readout because a shape is recognised faster than a
+                    number is read. */}
                 <div className="mb-3 overflow-hidden border border-line-soft bg-sunken">
-                  <Pipeline3D
-                    corrosionRate={detail.predicted_rate_mpy}
-                    wallThicknessMm={
-                      typeof detail.attributes?.wall_thickness_mm === 'number'
-                        ? detail.attributes.wall_thickness_mm
-                        : undefined
-                    }
-                    riskBand={detail.risk_band}
-                    height={132}
-                  />
-                  <div className="flex items-center gap-3 border-t border-line-soft px-2.5 py-1.5">
-                    <span className="label" style={{ fontSize: 8 }}>Surface</span>
-                    <span className="text-[10px] text-dim">
-                      Pitting scaled to predicted rate · drag or arrow keys to rotate ·
-                      illustrative, not an inspection image
-                    </span>
-                  </div>
+                  <Pipeline3D model={pipeModelFrom(detail)} height={196} />
+                  <PipeLegend model={pipeModelFrom(detail)} />
                 </div>
 
-                {/* primary readout */}
-                <div className="bracket mb-4 px-3 py-2.5">
-                  <div className="label mb-1.5">Predicted corrosion rate</div>
-                  <div className="flex items-baseline gap-2">
-                    <span
-                      className={cx(
-                        'num text-[30px] font-semibold leading-none',
-                        detail.risk_band === 'critical' ? 'text-critical'
-                          : detail.risk_band === 'elevated' ? 'text-elevated' : 'text-normal',
-                      )}
-                    >
-                      {fmt.rate(detail.predicted_rate_mpy)}
-                    </span>
-                    <span className="num text-[11px] text-dim">mils/year</span>
-                    <div className="flex-1" />
-                    <RiskBadge band={detail.risk_band} />
-                  </div>
-                </div>
+                {/* primary readout: the RATE, judged on its own absolute
+                    scale. It used to carry the risk band, so a 9.29 mpy
+                    segment in a low-consequence spot read as "normal". */}
+                <RateCard detail={detail} />
 
                 {/* Risk decomposition. The point of showing both halves is
                     that a modest corrosion rate can still top the register,
                     and an operator must be able to see why. */}
                 <div className="mb-4">
-                  <SectionTitle>Risk = likelihood x consequence</SectionTitle>
+                  <div className="flex items-start justify-between gap-3">
+                    <SectionTitle>Risk = likelihood x consequence</SectionTitle>
+                    <span className="flex items-center gap-1.5 whitespace-nowrap pt-[1px]">
+                      <span className="label" style={{ fontSize: 8.5 }}>Overall risk</span>
+                      <RiskBadge band={detail.risk_band} />
+                    </span>
+                  </div>
+                  <p className="mb-2 text-[11px] leading-relaxed text-muted">{riskReason(detail)}</p>
                   <div className="grid grid-cols-3 gap-2">
                     <Factor
                       label="Likelihood"
                       value={fmt.rate(detail.predicted_rate_mpy)}
                       unit="mpy"
                       band={detail.likelihood_band}
+                      note={detail.likelihood_pct >= 0.5
+                        ? `faster than ${Math.floor(detail.likelihood_pct * 100)}% of the fleet`
+                        : `slower than ${Math.floor((1 - detail.likelihood_pct) * 100)}% of the fleet`}
                     />
                     <Factor
                       label="Consequence"
@@ -217,12 +205,14 @@ export default function SegmentDrawer({
                       unit="/100"
                       band={detail.consequence.consequence_band === 'high' ? 'critical'
                         : detail.consequence.consequence_band === 'medium' ? 'elevated' : 'normal'}
+                      note="impact if it failed here"
                     />
                     <Factor
                       label="Risk"
                       value={detail.risk_score.toFixed(1)}
                       unit="/100"
                       band={detail.risk_band}
+                      note="what the register ranks on"
                     />
                   </div>
 
@@ -263,9 +253,23 @@ export default function SegmentDrawer({
                       >
                         {detail.remaining_life.remaining_life_years == null
                           ? '—'
-                          : detail.remaining_life.remaining_life_years.toFixed(1)}
+                          : detail.remaining_life.beyond_horizon
+                            ? `${detail.remaining_life.planning_horizon_years ?? 50}+`
+                            : detail.remaining_life.remaining_life_years.toFixed(1)}
                       </span>
-                      <span className="num text-[11px] text-dim">years to t-min</span>
+                      {/* Past the horizon the exact figure is arithmetic, not a
+                          forecast, so it moves to a tooltip instead of being
+                          printed as if it were one. */}
+                      <span
+                        className="num text-[11px] text-dim"
+                        title={detail.remaining_life.beyond_horizon && detail.remaining_life.remaining_life_years != null
+                          ? `Uniform-loss projection: ${detail.remaining_life.remaining_life_years.toFixed(0)} years at today's rate`
+                          : undefined}
+                      >
+                        {detail.remaining_life.beyond_horizon
+                          ? 'years · beyond planning horizon'
+                          : 'years to t-min'}
+                      </span>
                       <div className="flex-1" />
                       <span className={cx('label', VERDICT_TONE[detail.remaining_life.verdict])}>
                         {(detail.remaining_life.verdict || '—').replace(/_/g, ' ')}
@@ -274,7 +278,14 @@ export default function SegmentDrawer({
                     <dl className="grid gap-x-5 [grid-template-columns:repeat(auto-fit,minmax(190px,1fr))]">
                       <SpecRow k="Grade" v={`${detail.remaining_life.grade} · ${detail.remaining_life.smys_psi.toLocaleString()} psi SMYS`} />
                       <SpecRow k="Design factor" v={detail.remaining_life.design_factor.toFixed(2)} />
-                      <SpecRow k="Current wall" v={`${detail.remaining_life.current_wall_mm.toFixed(2)} mm`} />
+                      {detail.remaining_life.nominal_wall_mm != null && (
+                        <SpecRow k="Nominal wall" v={`${detail.remaining_life.nominal_wall_mm.toFixed(2)} mm`} />
+                      )}
+                      <SpecRow k="Measured wall" v={`${detail.remaining_life.current_wall_mm.toFixed(2)} mm`} />
+                      {detail.remaining_life.wall_loss_pct != null && (
+                        <SpecRow k="Metal loss" v={`${detail.remaining_life.wall_loss_pct.toFixed(1)}%`}
+                                 alert={detail.remaining_life.wall_loss_pct >= 20} />
+                      )}
                       <SpecRow k="Min required" v={`${detail.remaining_life.min_required_wall_mm.toFixed(2)} mm`} />
                       <SpecRow k="Safe pressure" v={`${detail.remaining_life.safe_operating_pressure_psi.toFixed(0)} psi`} />
                       <SpecRow
@@ -670,8 +681,8 @@ const VERDICT_TONE: Record<string, string> = {
 };
 
 /** One half of the risk product, shown as a gauge-style cell. */
-function Factor({ label, value, unit, band }: {
-  label: string; value: string; unit: string; band: string;
+function Factor({ label, value, unit, band, note }: {
+  label: string; value: string; unit: string; band: string; note?: string;
 }) {
   const tone = band === 'critical' ? 'text-critical'
     : band === 'elevated' ? 'text-elevated' : 'text-normal';
@@ -682,8 +693,95 @@ function Factor({ label, value, unit, band }: {
         <span className={cx('num text-[17px] font-semibold leading-none', tone)}>{value}</span>
         <span className="num text-[9.5px] text-dim">{unit}</span>
       </div>
+      {note && <div className="mt-1 text-[9.5px] leading-snug text-dim">{note}</div>}
     </div>
   );
+}
+
+/* The four NACE SP0775 bands, equal width on the bar so each is legible;
+   the marker is placed linearly within its band. */
+const RATE_BANDS: { cat: RateCategory; lo: number; hi: number; tick: string }[] = [
+  { cat: 'low', lo: 0, hi: 1, tick: '< 1' },
+  { cat: 'moderate', lo: 1, hi: 5, tick: '1-5' },
+  { cat: 'high', lo: 5, hi: 10, tick: '5-10' },
+  { cat: 'severe', lo: 10, hi: 20, tick: '> 10' },
+];
+
+function ratePosition(mpy: number): number {
+  const i = RATE_BANDS.findIndex((b) => mpy < b.hi || b.cat === 'severe');
+  const b = RATE_BANDS[Math.max(i, 0)];
+  const within = Math.min(Math.max((mpy - b.lo) / (b.hi - b.lo), 0), 1);
+  return (Math.max(i, 0) + within) / RATE_BANDS.length;
+}
+
+/** The corrosion rate on its own absolute scale: the number, its NACE
+ *  SP0775 category, and a bar that shows where it falls from low to
+ *  severe. Answers "is this rate good or bad" without reference to where
+ *  the pipe is; where it is belongs to the risk section. */
+function RateCard({ detail }: { detail: Omit<SegmentDetail, 'acknowledged'> }) {
+  const mpy = detail.predicted_rate_mpy;
+  const cat = rateCategoryOf(mpy, detail.rate_class?.category ?? detail.rate_category);
+  const pos = ratePosition(mpy);
+  return (
+    <div className="bracket mb-4 px-3 py-2.5">
+      <div className="label mb-1.5">Predicted corrosion rate</div>
+      <div className="flex items-baseline gap-2">
+        <span className={cx('num text-[30px] font-semibold leading-none', RATE_TEXT[cat])}>
+          {fmt.rate(mpy)}
+        </span>
+        <span className="num text-[11px] text-dim">mils/year</span>
+        <div className="flex-1" />
+        <RateBadge category={cat} />
+      </div>
+
+      <div className="mt-2.5" aria-hidden>
+        <div className="relative flex h-[6px] gap-[2px]">
+          {RATE_BANDS.map((b) => (
+            <div key={b.cat} className="h-full flex-1"
+                 style={{ background: `var(--color-band-${b.cat})`,
+                          opacity: b.cat === cat ? 1 : 0.32 }} />
+          ))}
+          <span className="absolute -top-[5px] h-0 w-0 -translate-x-1/2 border-x-[5px] border-t-[6px]
+                           border-x-transparent border-t-[var(--color-ink)]"
+                style={{ left: `${pos * 100}%` }} />
+        </div>
+        <div className="mt-1 flex">
+          {RATE_BANDS.map((b) => (
+            <span key={b.cat} className={cx('num flex-1 text-center text-[9px]',
+                                            b.cat === cat ? RATE_TEXT[cat] : 'text-dim')}>
+              {b.tick}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <p className="mt-1.5 text-[10.5px] leading-relaxed text-dim">
+        Wall lost per year, so <span className="text-muted">lower is better</span>. Rated
+        on the NACE SP0775 scale for carbon steel. Whether it matters depends on
+        where the pipe is: see overall risk below.
+      </p>
+    </div>
+  );
+}
+
+/** One sentence on why the overall risk is what it is. The rate and the
+ *  risk can disagree, and an operator must be able to see why. */
+function riskReason(d: Omit<SegmentDetail, 'acknowledged'>): string {
+  const rate = d.likelihood_band === 'critical'
+    ? 'Corrosion here is among the fastest in the fleet'
+    : d.likelihood_band === 'elevated'
+      ? 'Corrosion here is faster than most of the fleet'
+      : 'Corrosion here is slower than most of the fleet';
+  const fast = d.likelihood_band !== 'normal';
+  const c = d.consequence;
+  const where = c.is_hca ? ', inside a High Consequence Area' : '';
+  const impact = c.consequence_band === 'high'
+    ? `a failure here would be serious (consequence ${c.consequence_score.toFixed(0)}/100${where})`
+    : c.consequence_band === 'medium'
+      ? `a failure here would be moderately serious (${c.consequence_score.toFixed(0)}/100${where})`
+      : `a failure here would have limited impact (${c.consequence_score.toFixed(0)}/100${where})`;
+  const contrast = (fast && c.consequence_band === 'low') || (!fast && c.consequence_band === 'high');
+  return `${rate}${contrast ? ', but ' : ', and '}${impact}, so overall risk is ${d.risk_band}.`;
 }
 
 /** Dotted-leader spec row, matching the Attributes sheet below it. */

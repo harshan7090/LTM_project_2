@@ -25,6 +25,7 @@ from src.integrity.consequence import (  # noqa: E402
     assess_consequence, consequence_inputs_from_row, risk_band as band_for_risk,
     risk_score,
 )
+from src.integrity.corrosion_class import classify_rate, rate_category  # noqa: E402
 from src.integrity.remaining_life import assess_from_row  # noqa: E402
 from src.integrity.risk_matrix import build_matrix  # noqa: E402
 from src.integrity.repair import recommend_repair  # noqa: E402
@@ -126,7 +127,13 @@ class ScoringService:
         df = df.sort_values(["risk_score", "predicted_rate_mpy"], ascending=False)
         return [self._row_summary(row) for _, row in df.iterrows()]
 
-    def get_segment(self, segment_id: str) -> dict | None:
+    def get_segment(self, segment_id: str, explain: bool = True) -> dict | None:
+        """Full detail for one segment.
+
+        `explain=False` skips the SHAP attribution. The bulk planners
+        (schedule, dispatch) fetch 40-120 segments per request and never
+        read it, and it was three quarters of their preparation time.
+        """
         matches = self.df[self.df["segment_id"] == segment_id]
         if matches.empty:
             return None
@@ -134,8 +141,9 @@ class ScoringService:
         idx = matches.index[0]
         detail = self._row_summary(row)
         detail["attributes"] = {col: self._serialize(row[col]) for col in FEATURE_COLS}
-        detail["explanation"] = self._explain_row(idx)
+        detail["explanation"] = self._explain_row(idx) if explain else None
         detail["acknowledged"] = self._acknowledged.get(segment_id)
+        detail["rate_class"] = classify_rate(float(row["predicted_rate_mpy"]))
         detail["consequence"] = assess_consequence(
             consequence_inputs_from_row(row)).to_dict()
         detail["remaining_life"] = assess_from_row(
@@ -243,6 +251,9 @@ class ScoringService:
             "segment_id": row["segment_id"],
             "region": row["region"],
             "predicted_rate_mpy": float(row["predicted_rate_mpy"]),
+            # How fast the wall is going, on an absolute scale (NACE SP0775).
+            # Not the risk band: see src/integrity/corrosion_class.py.
+            "rate_category": rate_category(float(row["predicted_rate_mpy"])),
             # risk_band is likelihood x consequence; likelihood_band is the
             # corrosion rate alone. Both are exposed so the console can show
             # WHY something outranks a faster-corroding segment.

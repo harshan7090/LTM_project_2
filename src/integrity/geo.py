@@ -38,6 +38,29 @@ REGION_CENTROIDS = {
 }
 DEFAULT_CENTROID = (22.50, 79.00)     # geographic centre of India
 
+# The town each zone's crews are based at: the same points as the centroids
+# above, named so the console can say where a crew sets out from.
+DEPOT_CITY = {
+    "Western": "Vadodara",
+    "Northern": "Jaipur",
+    "Eastern": "Haldia",
+    "Southern": "Koottanad",
+    "North Eastern": "Guwahati",
+}
+
+
+def region_code(region: str) -> str:
+    """Short, UNIQUE code for a zone: initials for a multi-word name, the first
+    three letters otherwise. WES, NOR, EAS, SOU, NE.
+
+    The first-three-letters rule alone gave "Northern" and "North Eastern" the
+    same code, NOR, and any lookup keyed on it then merged two crews into one.
+    """
+    parts = [p for p in str(region).replace("-", " ").split() if p]
+    if len(parts) >= 2:
+        return "".join(p[0] for p in parts).upper()
+    return str(region)[:3].upper()
+
 # Degrees of scatter around a centroid. ~1.6 deg latitude is ~180 km, which is
 # the right order for a regional transmission system.
 REGION_SPREAD_DEG = 1.6

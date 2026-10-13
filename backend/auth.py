@@ -100,7 +100,7 @@ def _demo_user(password: str, name: str, role: str, region: str | None) -> dict:
 # anywhere near a real network.
 _USERS: dict[str, dict] = {
     "inspector1": _demo_user("inspect123", "Raj Kumar", "inspector", "Western"),
-    "supervisor1": _demo_user("supervise123", "Priya Nair", "supervisor", None),
+    "supervisor1": _demo_user("supervise123", "Harshan", "supervisor", None),
     "admin": _demo_user("admin123", "System Admin", "admin", None),
 }
 

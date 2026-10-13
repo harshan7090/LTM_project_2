@@ -5,12 +5,21 @@ Run with:  uvicorn backend.main:app --reload --port 8010
 Then open: http://localhost:8010
 """
 import io
+import mimetypes
 import os
 import sys
 from pathlib import Path
 
+# StaticFiles takes its Content-Type from `mimetypes`, which on Windows is
+# seeded from the registry and may not know .webp at all. It then serves the
+# file as application/octet-stream, and because every response carries
+# X-Content-Type-Options: nosniff, the browser refuses to render it as an
+# image. Registered explicitly so the console's photo assets work on any box.
+mimetypes.add_type("image/webp", ".webp")
+
 from fastapi import Depends, FastAPI, File, Form, Header, HTTPException, UploadFile, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from fastapi.responses import FileResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.types import Scope as _Scope  # noqa: E402
@@ -60,6 +69,21 @@ ALLOWED_ORIGINS = [
         "http://localhost:8010,http://127.0.0.1:8010,http://localhost:5173",
     ).split(",") if o.strip()
 ]
+
+# Compression. The fleet endpoints are the reason: /api/segments returns
+# every segment in the user's region scope, because the register virtualises
+# client-side and wants them all — 1.6 MB of JSON on every dashboard load,
+# with another 250 kB from /api/alerts. Both are highly repetitive JSON and
+# compress by roughly 10x. The landing bundle is served through here too.
+#
+# Registered BEFORE CORSMiddleware so it ends up INSIDE it: Starlette runs
+# the most recently added middleware outermost, and compressing after the
+# CORS headers were attached would leave them out of the compressed body.
+#
+# minimum_size skips small responses, where the gzip header costs more than
+# it saves. Already-compressed payloads (the PNG map tiles) are left alone
+# by GZipMiddleware, which honours the response content type.
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 app.add_middleware(
     CORSMiddleware,
@@ -269,7 +293,7 @@ def build_inspection_schedule(
 
     candidates = []
     for s in pool:
-        detail = svc.get_segment(s["segment_id"])
+        detail = svc.get_segment(s["segment_id"], explain=False)
         if detail is None:
             continue
         plan = recommend_inspection(detail)
@@ -378,7 +402,7 @@ def assign_workorders(
 
     orders = []
     for summary in pool:
-        detail = svc.get_segment(summary["segment_id"])
+        detail = svc.get_segment(summary["segment_id"], explain=False)
         if detail is None:
             continue
         plan = recommend_repair(detail).to_dict()
@@ -471,7 +495,11 @@ def map_tile(z: int, x: int, y: int, user: auth.User = Depends(current_user)):
         content=payload,
         media_type=ctype,
         # Tiles do not change. Let the browser keep them for a day.
-        headers={"Cache-Control": "public, max-age=86400"},
+        # private, not public: this route is authenticated, and "public"
+        # licenses a shared proxy to store the response and hand it to other
+        # users. The browser's own cache is unaffected either way, which is
+        # what makes a page reload draw the map instantly.
+        headers={"Cache-Control": "private, max-age=86400"},
     )
 
 

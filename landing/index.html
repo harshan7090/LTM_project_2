@@ -10,304 +10,70 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
 <link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@500;600;700&family=IBM+Plex+Sans:wght@300;400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet" />
 <link rel="stylesheet" href="/landing/app.css" />
+<link rel="icon" type="image/png" href="/landing/brand/favicon.png" />
+<link rel="icon" href="/landing/brand/favicon.ico" sizes="16x16 32x32 48x48" />
+<link rel="apple-touch-icon" href="/landing/brand/apple-touch-icon.png" />
 <!--
   The stylesheet and the bundle are both external and same-origin, because
   the app sends script-src 'self' and that blocks inline script outright.
-  <html class="no-js"> is cleared by the bundle; if it never runs, the
-  .no-js rules keep every word readable and every section open.
+
+  There is deliberately almost nothing else in this file. The page is one
+  continuous WebGL journey rather than a document of sections, so the markup
+  is a mount point.
+
+  The fallback below is a plain <div>, NOT a <noscript>. A noscript block is
+  invisible to a browser that has script enabled — which is exactly the case
+  where the bundle loads and the SCENE fails. This one is hidden by default
+  and revealed by either `html.no-js` (the class the bundle removes) or
+  `html.scene-failed` (the class it adds when start-up throws), so both
+  failure modes land on readable copy instead of a black rectangle.
 -->
 </head>
 <body>
 
-<a class="skip" href="#hero">Skip to content</a>
+<a class="skip" href="#plain">Skip to content</a>
 
 <!-- Covers the first frame of the scene, then leaves. No minimum display
-     time: a progress bar that outlasts what it measures is theatre. -->
+     time: a progress bar that outlasts what it measures is theatre. The CSS
+     also dismisses this on a timer, so it lifts even if the bundle never
+     parses. -->
 <div id="loader" class="loader">
   <div class="loader-inner">
-    <div class="loader-mark">C</div>
+    <img class="loader-mark" src="/landing/brand/corvex-mark.webp" alt="" />
     <div class="loader-word">Corvex</div>
     <div class="loader-bar"><span></span></div>
     <div class="loader-note label">Loading infrastructure</div>
   </div>
 </div>
 
-<!-- The scene. Fixed behind everything, so one camera journey runs the
-     whole length of the page rather than restarting per section. -->
-<canvas id="pipe-gl" class="pipe-gl" aria-hidden="true"></canvas>
-<div class="pipe-flat" aria-hidden="true"><span></span><span></span><span></span></div>
-<div class="scrim" aria-hidden="true"></div>
+<div id="root"></div>
 
-<header id="header">
-  <a class="brand" href="#hero">
-    <span class="mark">C</span>
-    <span class="wordmark">Corvex</span>
-  </a>
-  <nav class="nav" aria-label="Sections">
-    <a class="nav-link" href="#scale">Platform</a>
-    <a class="nav-link" href="#predict">Intelligence</a>
-    <a class="nav-link" href="#risk">Risk</a>
-    <a class="nav-link" href="#action">Operations</a>
-    <a class="nav-link" href="#trust">About</a>
-  </nav>
-  <a class="btn btn-sm" href="/console">
-    Launch console
-    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
-  </a>
-</header>
-
-<main>
-
-  <!-- ============================================================ hero -->
-  <section id="hero">
-    <div class="wrap hero-copy" id="hero-copy">
-      <p class="eyebrow"><span class="pulse" aria-hidden="true"><i></i><b></b></span><span class="label">Demonstration fleet · synthetic data</span></p>
-      <h1>
-        <span class="h1-sm">Corvex</span>
-        Pipeline<br>Intelligence
-      </h1>
-      <p class="triad">Predict. <span>Protect.</span> Prevent.</p>
-      <p class="lede">
-        AI-powered pipeline integrity and corrosion intelligence for the
-        infrastructure that moves energy.
-      </p>
-      <div class="actions">
-        <a class="btn btn-lg" href="/console">
-          Launch console
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
-        </a>
-        <a class="btn btn-ghost btn-lg" href="#scale">Explore platform</a>
-      </div>
-    </div>
-    <a class="cue" href="#scale" aria-label="Scroll to explore">
-      <span class="label">Scroll to explore</span>
-      <span class="cue-line" aria-hidden="true"></span>
-    </a>
-  </section>
-
-  <!-- ==================================================== 01 the network -->
-  <section id="scale" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">01 — The network</span>
-      <h2>Infrastructure<br>at scale.</h2>
-      <div class="figures">
-        <div><b class="num" data-count="5000" data-label="pipeline segments">0</b><span class="label">Pipeline segments</span></div>
-        <div><b class="num" data-count="15" data-label="corridors">0</b><span class="label">Corridors</span></div>
-        <div><b class="num" data-count="6414" data-label="kilometres of network">0</b><span class="label">km of network</span></div>
-        <div><b class="num" data-count="5" data-label="operating zones">0</b><span class="label">Operating zones</span></div>
-      </div>
-      <p class="body">
-        Segments are placed along fifteen real Indian trunk corridors — the
-        HVJ, Jamnagar–Loni, Paradip–Haldia, Kochi–Mangalore,
-        Numaligarh–Siliguri — not scattered around a map.
-      </p>
-      <!-- Annotations, the way a drawing labels a thing rather than a card
-           describing it. -->
-      <ul class="annots">
-        <li><span class="annot-k label">Western</span><span class="annot-v">HVJ West Leg · Dahej–Vadodara</span></li>
-        <li><span class="annot-k label">Northern</span><span class="annot-v">Jamnagar–Loni · Panipat–Jammu</span></li>
-        <li><span class="annot-k label">North Eastern</span><span class="annot-v">Numaligarh–Siliguri</span></li>
-      </ul>
-    </div>
-  </section>
-
-  <!-- ====================================================== 02 corrosion -->
-  <section id="corrosion" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">02 — Corrosion</span>
-      <h2>Corrosion<br>isn't static.</h2>
-      <p class="body">
-        It evolves. External corrosion is an electrochemical cell between
-        pipe steel and soil — coating resists it, cathodic protection opposes
-        it, and where both fail the wall thins until it cannot hold pressure.
-      </p>
-      <p class="body">
-        Corvex models the rate, the uncertainty around it, and the
-        consequence behind every segment.
-      </p>
-      <div class="readouts">
-        <div><span class="label">Mean predicted rate</span><b class="num"><span data-count="1.03" data-decimals="2">0</span> mpy</b></div>
-        <div><span class="label">Peak observed</span><b class="num"><span data-count="15.44" data-decimals="2">0</span> mpy</b></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ======================================================== 03 predict -->
-  <section id="predict" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">03 — Predict</span>
-      <h2 class="h-lead">Predict.</h2>
-      <p class="body">
-        Gradient-boosted trees learn the patterns behind corrosion
-        progression from forty-one attributes per segment — soil, coating,
-        cathodic protection, age, pressure, inspection history.
-      </p>
-      <div class="readouts">
-        <div><span class="label">Test R²</span><b class="num"><span data-count="0.682" data-decimals="3">0</span></b></div>
-        <div><span class="label">Test MAE</span><b class="num"><span data-count="0.483" data-decimals="3">0</span> mpy</b></div>
-        <div><span class="label">Interval coverage</span><b class="num"><span data-count="89.8" data-decimals="1">0</span>%</b></div>
-      </div>
-      <p class="foot">
-        Measured on a held-out split of the synthetic demonstration fleet.
-        Not a claim of real-world operator validation.
-      </p>
-    </div>
-  </section>
-
-  <!-- ======================================================== 04 explain -->
-  <section id="explain" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">04 — Explain</span>
-      <h2>Not just a prediction.<br>An <em>explanation</em>.</h2>
-      <p class="body">
-        Exact SHAP attribution decomposes every prediction into the features
-        that produced it. No number on the screen is unattributable.
-      </p>
-      <div class="shap">
-        <div class="shap-row"><span class="shap-k">Soil resistivity</span><span class="shap-bar" style="--w:86%"></span><span class="shap-v num">+0.24</span></div>
-        <div class="shap-row"><span class="shap-k">Coating condition</span><span class="shap-bar" style="--w:64%"></span><span class="shap-v num">+0.18</span></div>
-        <div class="shap-row"><span class="shap-k">Pipe age</span><span class="shap-bar" style="--w:50%"></span><span class="shap-v num">+0.14</span></div>
-        <div class="shap-row neg"><span class="shap-k">Cathodic protection</span><span class="shap-bar" style="--w:32%"></span><span class="shap-v num">−0.09</span></div>
-        <div class="shap-row neg"><span class="shap-k">Wall thickness</span><span class="shap-bar" style="--w:20%"></span><span class="shap-v num">−0.05</span></div>
-        <div class="shap-total"><span class="label">Predicted corrosion rate</span><b class="num">4.18 mpy</b></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- =========================================================== 05 risk -->
-  <section id="risk" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">05 — Risk</span>
-      <h2 class="h-lead">Protect.</h2>
-      <p class="body">
-        Likelihood alone is not risk. HCA status under 49 CFR 192.903 and
-        195.450, class location, and potential impact radius turn a rate into
-        a consequence — then onto the 5×5 the discipline already uses.
-      </p>
-      <div class="matrix" role="img" aria-label="Five by five likelihood and consequence risk matrix for the demonstration fleet, concentrated in the low-risk corner">
-        <div class="matrix-grid" id="matrix-grid"></div>
-        <div class="matrix-axes">
-          <span class="label x">Consequence →</span>
-          <span class="label y">Likelihood →</span>
-        </div>
-      </div>
-      <div class="bands">
-        <span><i style="background:var(--good)"></i>Low <b class="num">3,896</b></span>
-        <span><i style="background:var(--warn)"></i>Moderate <b class="num">871</b></span>
-        <span><i style="background:#d8794a"></i>High <b class="num">167</b></span>
-        <span><i style="background:var(--bad)"></i>Severe <b class="num">66</b></span>
-      </div>
-    </div>
-  </section>
-
-  <!-- ========================================================= 06 action -->
-  <section id="action" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">06 — From insight to action</span>
-      <h2>Intelligence becomes<br>an <em>executable plan</em>.</h2>
-      <ol class="flow">
-        <li><b>Predict</b><span>Corrosion rate, with a calibrated interval</span></li>
-        <li><b>Assess</b><span>Remaining life, ERF, safe operating pressure</span></li>
-        <li><b>Inspect</b><span>Method ranked by value per crew-day</span></li>
-        <li><b>Repair</b><span>Action ranked the same way, costed</span></li>
-        <li><b>Dispatch</b><span>Nearest qualified crew, under real constraints</span></li>
-      </ol>
-      <p class="body">
-        Two constraint solvers assign the work: travel is charged against the
-        same crew-day budget as the job, and a statutory deadline is a hard
-        constraint, not a preference.
-      </p>
-    </div>
-  </section>
-
-  <!-- ====================================================== 07 assistant -->
-  <section id="assistant" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">07 — Intelligence</span>
-      <h2>Intelligence<br>that <em>explains</em>.</h2>
-      <div class="convo">
-        <p class="q">Why is this segment high risk?</p>
-        <div class="a">
-          <p>
-            At 42% wall loss the Modified B31G evaluation returns ERF 0.91 —
-            below the immediate-repair threshold, inside the scheduled band.
-            The segment sits in a Class 3 location with a 612 ft impact
-            radius, so it is an HCA and the reassessment interval is capped
-            at 84 months.
-          </p>
-          <div class="cites">
-            <span class="label">Evidence</span>
-            <b>49 CFR 192.903</b><b>ASME B31G</b><b>49 CFR 192.939</b>
-          </div>
-        </div>
-      </div>
-      <p class="body rule">
-        The language model explains the decision. It never makes it — every
-        auditable number comes from deterministic, tested code.
-      </p>
-    </div>
-  </section>
-
-  <!-- ========================================================== 08 trust -->
-  <section id="trust" class="chapter">
-    <div class="wrap chapter-copy">
-      <span class="chapter-num num">08 — Engineering</span>
-      <h2>Engineered for<br><em>auditability</em>.</h2>
-      <ul class="standards">
-        <li>49 CFR 192</li><li>49 CFR 195</li><li>ASME B31.4</li>
-        <li>ASME B31.8</li><li>ASME B31G</li><li>API 570</li>
-        <li>API 579-1</li><li>API 1160</li><li>NACE / AMPP SP0169</li>
-      </ul>
-      <p class="foot">
-        Standards implemented as the design basis of the system. Not a claim
-        of external certification.
-      </p>
-      <div class="figures tight">
-        <div><b class="num" data-count="409" data-label="tests passing">0</b><span class="label">Tests passing</span></div>
-        <div><b class="num" data-count="25" data-label="API routes">0</b><span class="label">API routes</span></div>
-        <div><b class="num" data-count="2616" data-label="segments in a high consequence area">0</b><span class="label">Segments in an HCA</span></div>
-        <div><b class="num">90–99%</b><span class="label">Crew utilisation</span></div>
-      </div>
-    </div>
-  </section>
-
-  <!-- ============================================================= close -->
-  <section id="close" class="chapter">
-    <div class="wrap chapter-copy center">
-      <h2 class="h-close">Predict.<br>Protect.<br>Prevent.</h2>
-      <p class="body">
-        Turn pipeline data into actionable integrity intelligence.
-      </p>
-      <div class="actions center">
-        <a class="btn btn-lg" href="/console">
-          Launch console
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true"><path d="M5 12h13M12 5l7 7-7 7"/></svg>
-        </a>
-      </div>
-      <p class="foot">
-        <span class="num">supervisor1</span> / <span class="num">supervise123</span>
-        · synthetic demonstration fleet, not an operating record
-      </p>
-    </div>
-  </section>
-
-</main>
-
-<footer>
-  <div class="wrap footer-grid">
-    <div>
-      <div class="wordmark">Corvex</div>
-      <p class="label">AI-powered pipeline integrity<br>&amp; corrosion intelligence</p>
-    </div>
-    <nav aria-label="Footer">
-      <a href="#scale">Platform</a>
-      <a href="#predict">Intelligence</a>
-      <a href="#action">Operations</a>
-      <a href="/console">Console</a>
-    </nav>
-    <p class="num copyright">© 2026 Corvex · Synthetic demonstration data</p>
-  </div>
-</footer>
+<div class="plain" id="plain">
+  <img class="plain__logo" src="/landing/brand/corvex-logo.webp" alt="Corvex" />
+  <h1>Corvex — Pipeline Intelligence</h1>
+  <p class="plain__lede">
+    Predict. Protect. Prevent. AI-powered pipeline integrity and corrosion
+    intelligence for the infrastructure that moves energy.
+    <strong>Demonstration fleet, synthetic data.</strong>
+  </p>
+  <dl>
+    <dt>The network</dt>
+    <dd>5,000 segments on fifteen real Indian trunk corridors — 6,414 km.</dd>
+    <dt>Prediction</dt>
+    <dd>Gradient-boosted trees over 41 attributes. Test R² 0.682, MAE 0.483 mpy,
+        89.8% empirical coverage at a 90% target, measured on a held-out split
+        of the synthetic fleet. Not a claim of real-world operator validation.</dd>
+    <dt>Explainability</dt>
+    <dd>Exact SHAP attribution on every prediction.</dd>
+    <dt>Risk</dt>
+    <dd>Likelihood × consequence on the 5×5, under 49 CFR 192.903 and 195.450.
+        3,896 low · 871 moderate · 167 high · 66 severe.</dd>
+    <dt>The rule</dt>
+    <dd>Every auditable decision is deterministic, tested code. AI explains.
+        AI never decides.</dd>
+  </dl>
+  <p><a class="cta" href="/console">Open the console</a></p>
+</div>
 
 <script src="/landing/bundle.js"></script>
 </body>

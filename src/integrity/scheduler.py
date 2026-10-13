@@ -49,7 +49,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from ortools.sat.python import cp_model  # noqa: E402
 
 from src.integrity.geo import (  # noqa: E402
-    REGION_CENTROIDS, road_distance_km, travel_days as travel_days_for,
+    DEPOT_CITY, REGION_CENTROIDS, region_code, road_distance_km,
+    travel_days as travel_days_for,
 )
 
 # Crew-days of travel weighed against a unit of risk covered. Matches the
@@ -60,6 +61,9 @@ TRAVEL_PENALTY_PER_DAY = 6.0
 
 # Urgency multipliers: how much more valuable it is to cover a critical
 # segment than a normal one. Operator-tunable engineering judgement.
+# Accept a plan once it is proven within this fraction of the optimum.
+OPTIMALITY_GAP_LIMIT = 0.01
+
 URGENCY_WEIGHT = {"critical": 3.0, "elevated": 1.8, "normal": 1.0}
 
 # CP-SAT is an integer solver, so float objectives are scaled to ints.
@@ -80,6 +84,8 @@ class Crew:
     # can total 10-12 crew-days, so a period shorter than that makes every
     # segment individually unschedulable — see `oversized` handling below.
     days_per_period: float = 20.0
+    # Town the crew is based at, for the console to show where it sets out from.
+    depot: str | None = None
 
 
 @dataclass
@@ -167,6 +173,9 @@ class ScheduleResult:
     missed_deadlines: list[dict] = field(default_factory=list)
     hca_total: int = 0
     hca_scheduled: int = 0
+    # How far the plan could still be from the best possible one, as proven by
+    # the solver's bound. 0 when proven optimal; None when nothing was solved.
+    optimality_gap_pct: float | None = None
 
     @property
     def hca_coverage_pct(self) -> float:
@@ -209,6 +218,7 @@ class ScheduleResult:
             "solve_ms": round(self.solve_ms, 1),
             "crews": self.crews,
             "message": self.message,
+            "optimality_gap_pct": self.optimality_gap_pct,
         }
 
 
@@ -222,12 +232,19 @@ def default_crews(regions: list[str], per_region: int = 1,
             suffix = f"-{i + 1}" if per_region > 1 else ""
             lat, lon = REGION_CENTROIDS.get(region, (None, None))
             crews.append(Crew(
-                crew_id=f"{region.replace(' ', '').upper()[:3]}{suffix}",
-                name=f"{region} crew{suffix}",
+                crew_id=f"{region_code(region)}{suffix}",
+                name=f"{region} inspection crew{suffix}",
                 region=region,
                 days_per_period=days_per_period,
                 home_latitude=lat, home_longitude=lon,
+                depot=DEPOT_CITY.get(region),
             ))
+    # Every report below is keyed on crew_id. Two crews sharing one silently
+    # merge their workloads, which is how both "NOR" crews once showed 122 of
+    # 80 crew-days. Fail loudly rather than report nonsense.
+    ids = [c.crew_id for c in crews]
+    if len(ids) != len(set(ids)):
+        raise ValueError(f"crew ids are not unique: {sorted(ids)}")
     return crews
 
 
@@ -425,6 +442,11 @@ def build_schedule(
     solver = cp_model.CpSolver()
     solver.parameters.max_time_in_seconds = max_solve_seconds
     solver.parameters.num_search_workers = 8
+    # Stop once the plan is PROVEN within 1% of the best possible. Four
+    # identical periods make many equally good schedules, so the solver finds
+    # an excellent one quickly and then spends the whole time limit proving
+    # nothing beats it. The gap it reaches is reported, not hidden.
+    solver.parameters.relative_gap_limit = OPTIMALITY_GAP_LIMIT
     status = solver.Solve(model)
 
     status_name = solver.StatusName(status)
@@ -437,6 +459,12 @@ def build_schedule(
             message=f"Solver returned {status_name}.",
             oversized=oversized, warnings=warnings,
         )
+
+    # Proven distance from the optimum: (bound - found) / bound. Taken from
+    # the bound itself, NOT the status: CP-SAT reports OPTIMAL when it stops
+    # at the gap limit too, and "proven optimal" must mean a zero gap.
+    best, bound = solver.ObjectiveValue(), solver.BestObjectiveBound()
+    gap_pct = round(max(bound - best, 0.0) / bound * 100, 2) if bound > 0 else 0.0
 
     assignments: list[Assignment] = []
     for (si, ci, p), v in x.items():
@@ -497,20 +525,29 @@ def build_schedule(
     used = sum(a.est_days for a in assignments)
 
     crew_summary = []
-    for crew in crews:
-        mine = [a for a in assignments if a.crew_id == crew.crew_id]
+    for ci, crew in enumerate(crews):
+        # Matched by the solver's crew INDEX, not by id, so the summary is
+        # right even if two crews were ever given the same label.
+        mine = [segments[si] for (si, c, _p), v in x.items() if c == ci and solver.Value(v)]
+        work = sum(g.est_days for g in mine)
+        travel = sum(_travel_days(g, crew) for g in mine)
         crew_summary.append({
             "crew_id": crew.crew_id,
             "name": crew.name,
             "region": crew.region,
+            "depot": crew.depot,
             "days_available": round(crew.days_per_period * periods, 1),
-            "days_used": round(sum(a.est_days for a in mine), 1),
+            # Work and travel separately: the solver charges BOTH to the
+            # crew-day budget, so showing work alone understated the load.
+            "days_used": round(work, 1),
+            "travel_days": round(travel, 1),
+            "days_committed": round(work + travel, 1),
             "segments": len(mine),
         })
 
     return ScheduleResult(
         status=status_name,
-        optimal=(status == cp_model.OPTIMAL),
+        optimal=(status == cp_model.OPTIMAL and gap_pct < 0.005),
         assignments=assignments,
         periods=periods,
         total_days_used=used,
@@ -526,8 +563,9 @@ def build_schedule(
         missed_deadlines=missed_deadlines,
         hca_total=hca_total,
         hca_scheduled=hca_scheduled,
+        optimality_gap_pct=gap_pct,
         message=(
-            f"{'Proven optimal' if status == cp_model.OPTIMAL else 'Feasible'} — "
+            f"{'Proven optimal' if gap_pct < 0.005 else f'Proven within {gap_pct:.2f}% of the best possible plan'} — "
             f"{len(assignments)} of {len(all_segments)} candidate segments scheduled "
             f"across {periods} periods."
         ),

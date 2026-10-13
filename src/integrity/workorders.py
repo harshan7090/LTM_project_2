@@ -46,7 +46,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent))
 from ortools.sat.python import cp_model  # noqa: E402
 
 from src.integrity.geo import (  # noqa: E402
-    REGION_CENTROIDS, road_distance_km, travel_days,
+    DEFAULT_CENTROID, DEPOT_CITY, REGION_CENTROIDS, road_distance_km, travel_days,
 )
 
 # --------------------------------------------------------------- tuning ----
@@ -79,6 +79,7 @@ class Technician:
     skills: tuple[str, ...] = ("general",)
     days_available: float = 20.0
     region: str | None = None       # home region, for reporting not constraint
+    depot: str | None = None        # town the crew sets out from
 
     def can_do(self, required: list[str]) -> bool:
         return all(s in self.skills for s in required)
@@ -192,13 +193,14 @@ DEPOT_CREWS = [
 def default_technicians(regions, days_available: float = 20.0) -> list[Technician]:
     techs: list[Technician] = []
     for region in sorted(set(regions)):
-        lat, lon = REGION_CENTROIDS.get(region, (39.83, -98.58))
+        lat, lon = REGION_CENTROIDS.get(region, DEFAULT_CENTROID)
         for suffix, skills, label in DEPOT_CREWS:
             techs.append(Technician(
                 tech_id=f"{_region_code(region)}-{suffix}",
                 name=f"{region} {label}",
                 home_latitude=lat, home_longitude=lon,
                 skills=skills, days_available=days_available, region=region,
+                depot=DEPOT_CITY.get(region),
             ))
     return techs
 
@@ -447,7 +449,7 @@ def assign_work_orders(orders: list[WorkOrder], technicians: list[Technician],
     # --- read the solution back onto the orders -----------------------------
     per_tech: dict[str, dict] = {
         t.tech_id: {"tech_id": t.tech_id, "name": t.name, "region": t.region,
-                    "skills": list(t.skills),
+                    "depot": t.depot, "skills": list(t.skills),
                     "days_available": round(t.days_available, 1),
                     "work_days": 0.0, "travel_days": 0.0, "travel_km": 0.0,
                     "orders": 0}

@@ -99,6 +99,16 @@ DEFAULT_TEMP_FACTOR = 1.0
 # immediate attention regardless of the arithmetic. Judgement.
 CRITICAL_WALL_FRACTION = 0.20
 
+# Share of the original corrosion allowance (nominal wall minus t_min) that,
+# once consumed, warrants considering a derate. Judgement, in line with the
+# 80% figure B31G uses as its limit for metal loss.
+ALLOWANCE_CONSUMED_DERATE = 0.80
+
+# Remaining life beyond this is reported as "beyond the planning horizon".
+# Coatings age, CP systems change and regulation moves on; a uniform-loss
+# projection past half a century is arithmetic, not a forecast.
+PLANNING_HORIZON_YEARS = 50.0
+
 # Estimated Repair Factor threshold. ERF >= 1.0 means the safe pressure has
 # fallen to or below the operating pressure — an industry-standard trigger.
 ERF_REPAIR_THRESHOLD = 1.0
@@ -115,6 +125,7 @@ class RemainingLifeAssessment:
     design_factor: float = 0.0
 
     current_wall_in: float = 0.0
+    nominal_wall_in: float | None = None  # as built, when the record has it
     min_required_wall_in: float = 0.0
     corrosion_allowance_in: float = 0.0   # wall available to be lost
     corrosion_rate_mpy: float = 0.0
@@ -144,6 +155,24 @@ class RemainingLifeAssessment:
         # an engineer comparing against the record should not have to convert.
         d["current_wall_mm"] = round(inches_to_mm(self.current_wall_in), 2)
         d["min_required_wall_mm"] = round(inches_to_mm(self.min_required_wall_in), 2)
+        # Nominal wall and the share of it already lost. Only reported when
+        # the nominal is known and not below the measurement, since a measured
+        # wall above nominal means one of the two records is wrong, and a
+        # negative loss would be a number nobody should read.
+        nominal = self.nominal_wall_in
+        if nominal and nominal >= self.current_wall_in:
+            d["nominal_wall_mm"] = round(inches_to_mm(nominal), 2)
+            d["wall_loss_pct"] = round((1 - self.current_wall_in / nominal) * 100, 1)
+        else:
+            d["nominal_wall_mm"] = None
+            d["wall_loss_pct"] = None
+        d.pop("nominal_wall_in", None)
+        # The arithmetic stays in remaining_life_years; this says whether it
+        # is past the point where it means anything as a forecast.
+        d["planning_horizon_years"] = PLANNING_HORIZON_YEARS
+        d["beyond_horizon"] = bool(
+            self.remaining_life_years is not None
+            and self.remaining_life_years > PLANNING_HORIZON_YEARS)
         return d
 
 
@@ -243,7 +272,8 @@ def assess_remaining_life(segment_id: str, wall_thickness_mm: float,
                           diameter_inches: float, operating_pressure_psi: float,
                           corrosion_rate_mpy: float, material: str = "Carbon Steel",
                           product_type: str = "", class_location: int = 1,
-                          grade: str | None = None) -> RemainingLifeAssessment:
+                          grade: str | None = None,
+                          nominal_wall_mm: float | None = None) -> RemainingLifeAssessment:
     """Full remaining-life assessment for one segment, uniform metal loss.
 
     Uniform loss rather than a discrete defect, because a segment-level
@@ -304,6 +334,16 @@ def assess_remaining_life(segment_id: str, wall_thickness_mm: float,
 
     wall_fraction = (allowance / wall_in) if wall_in > 0 else 0.0
 
+    # How much of the ORIGINAL corrosion allowance is already gone, when the
+    # as-built wall is known. This, not wall_fraction, is the derate signal:
+    # a pipe designed close to its Barlow minimum (which real pipe is, by
+    # design) has a small margin on the day it is laid, and judging it by
+    # margin alone flagged brand-new pipe for derating.
+    nominal_in = mm_to_inches(nominal_wall_mm) if nominal_wall_mm else None
+    consumed = None
+    if nominal_in and nominal_in > t_min and nominal_in >= wall_in:
+        consumed = (nominal_in - wall_in) / (nominal_in - t_min)
+
     # --- verdict ---------------------------------------------------------
     if erf is not None and erf >= ERF_REPAIR_THRESHOLD:
         verdict = "repair_now"
@@ -313,7 +353,15 @@ def assess_remaining_life(segment_id: str, wall_thickness_mm: float,
         )
     elif allowance <= 0:
         verdict = "repair_now"
-    elif wall_fraction < CRITICAL_WALL_FRACTION:
+    elif consumed is not None and consumed >= ALLOWANCE_CONSUMED_DERATE:
+        verdict = "derate"
+        drivers.append(
+            f"{consumed*100:.0f}% of the corrosion allowance is already gone "
+            f"— pressure derating should be considered"
+        )
+    elif consumed is None and wall_fraction < CRITICAL_WALL_FRACTION:
+        # No as-built record: fall back to the margin test, which is the best
+        # available without knowing what the wall started at.
         verdict = "derate"
         drivers.append(
             f"Only {wall_fraction*100:.0f}% of the wall remains above the "
@@ -328,10 +376,12 @@ def assess_remaining_life(segment_id: str, wall_thickness_mm: float,
     else:
         verdict = "monitor"
 
-    if remaining is not None and remaining > 100:
+    if remaining is not None and remaining > PLANNING_HORIZON_YEARS:
         notes.append(
-            "Projected remaining life exceeds 100 years. At these rates the "
-            "governing threat is unlikely to be uniform external corrosion."
+            f"Projected remaining life is beyond the {PLANNING_HORIZON_YEARS:.0f}-year "
+            f"planning horizon. At this corrosion rate the wall is not what "
+            f"limits the line's life; coating ageing, CP performance and "
+            f"third-party damage are the threats to watch."
         )
 
     notes.append(
@@ -347,6 +397,7 @@ def assess_remaining_life(segment_id: str, wall_thickness_mm: float,
         smys_psi=float(smys),
         design_factor=f,
         current_wall_in=wall_in,
+        nominal_wall_in=(mm_to_inches(nominal_wall_mm) if nominal_wall_mm else None),
         min_required_wall_in=t_min,
         corrosion_allowance_in=max(allowance, 0.0),
         corrosion_rate_mpy=corrosion_rate_mpy,
@@ -371,9 +422,23 @@ def assess_from_row(row, corrosion_rate_mpy: float,
             return default
         return default if value is None else value
 
+    def as_wall(value) -> float | None:
+        try:
+            v = float(value)
+        except (TypeError, ValueError):
+            return None
+        return v if math.isfinite(v) and v > 0 else None
+
+    # Remaining life counts down from the wall the pipe HAS, which is the
+    # measured wall when a record carries one. `wall_thickness_mm` is the
+    # nominal, as-built wall; using it would credit decades of corrosion back.
+    nominal = as_wall(get("wall_thickness_mm", None))
+    measured = as_wall(get("measured_wall_mm", None))
+
     return assess_remaining_life(
         segment_id=str(get("segment_id", "?")),
-        wall_thickness_mm=float(get("wall_thickness_mm", 0) or 0),
+        wall_thickness_mm=measured if measured is not None else (nominal or 0.0),
+        nominal_wall_mm=nominal if measured is not None else None,
         diameter_inches=float(get("diameter_inches", 0) or 0),
         operating_pressure_psi=float(get("operating_pressure_psi", 0) or 0),
         corrosion_rate_mpy=float(corrosion_rate_mpy or 0),

@@ -172,10 +172,13 @@ export function Sparkline({
     <svg width={width} height={height} className="block overflow-visible"
          aria-hidden="true">
       {/* No axis, no grid, no legend. A sparkline is a single series shown
-          for its shape; anything else on it is noise at this size. */}
-      <polyline points={pts} fill="none" stroke={tone} strokeWidth="1.25"
+          for its shape; anything else on it is noise at this size.
+          Colour goes through `style`, not the stroke/fill attributes: a
+          presentation attribute does not resolve var(), so a token there
+          paints nothing. */}
+      <polyline points={pts} fill="none" style={{ stroke: tone }} strokeWidth="1.25"
                 strokeLinejoin="round" strokeLinecap="round" opacity=".85" />
-      <circle cx={width} cy={lastY} r="1.8" fill={tone} />
+      <circle cx={width} cy={lastY} r="1.8" style={{ fill: tone }} />
     </svg>
   );
 }

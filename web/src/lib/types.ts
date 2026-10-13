@@ -13,10 +13,25 @@ export interface LoginResponse extends Me {
 
 export type ConsequenceBand = 'high' | 'medium' | 'low';
 
+/** How fast the wall is going, on the absolute NACE SP0775 scale. Lower is
+ *  better. Deliberately NOT the risk band: a fast rate in a place where a
+ *  failure harms no one is high corrosion and normal risk. */
+export type RateCategory = 'low' | 'moderate' | 'high' | 'severe';
+
+export interface RateClass {
+  category: RateCategory;
+  label: string;
+  /** The band's limits, e.g. "5-10 mpy". */
+  range: string;
+  basis: string;
+}
+
 export interface Segment {
   segment_id: string;
   region: string;
   predicted_rate_mpy: number;
+  /** Absolute severity of the rate itself (NACE SP0775). */
+  rate_category?: RateCategory;
   /** Likelihood x consequence, 0-100. This is what the register ranks on. */
   risk_score: number;
   /** Band of risk_score — NOT of the corrosion rate. */
@@ -114,6 +129,13 @@ export interface RemainingLife {
   design_factor: number;
   current_wall_in: number;
   current_wall_mm: number;
+  /** As-built wall, and the share of it corrosion has already removed.
+   *  Null when the record has no as-built wall to compare against. */
+  nominal_wall_mm?: number | null;
+  wall_loss_pct?: number | null;
+  /** Remaining life past this is reported as beyond the planning horizon. */
+  planning_horizon_years?: number;
+  beyond_horizon?: boolean;
   min_required_wall_in: number;
   min_required_wall_mm: number;
   corrosion_allowance_in: number;
@@ -135,6 +157,7 @@ export interface ShapContribution {
 
 export interface SegmentDetail extends Segment {
   attributes: Record<string, string | number | boolean>;
+  rate_class?: RateClass;
   explanation: {
     base_value: number;
     contributions: ShapContribution[];
@@ -245,8 +268,15 @@ export interface CrewLoad {
   crew_id: string;
   name: string;
   region: string | null;
+  /** Town the crew is based at and travels out from. */
+  depot?: string | null;
   days_available: number;
+  /** Inspection work only. */
   days_used: number;
+  /** Round trips from the depot, charged to the same budget. */
+  travel_days?: number;
+  /** Work + travel: what actually counts against capacity. */
+  days_committed?: number;
   segments: number;
 }
 
@@ -282,6 +312,8 @@ export interface ScheduleResult {
   solve_ms: number;
   crews: CrewLoad[];
   message: string;
+  /** Proven distance from the best possible plan; 0 when optimal. */
+  optimality_gap_pct?: number | null;
 }
 
 export interface MissedDeadline {
@@ -385,6 +417,8 @@ export interface TechnicianLoad {
   tech_id: string;
   name: string;
   region: string | null;
+  /** Town the crew is based at. */
+  depot?: string | null;
   skills: string[];
   days_available: number;
   work_days: number;

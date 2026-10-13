@@ -12,10 +12,10 @@
 
   The rules that follow from it:
 
-    Colour    Safety amber on graphite, borrowed from hazard signage and
-              control panels. Red/amber/green carry their industrial meanings
-              (critical / elevated / normal) and are used for nothing else, so
-              colour is always information and never decoration.
+    Colour    Glossy crimson on black is the identity (chosen to match the
+              sign-in screen). Red-orange/amber/green carry their industrial
+              meanings (critical / elevated / normal) and are used for nothing
+              else; the alarm red is kept visibly off the brand crimson.
 
     Corners   2px, effectively square. Rounded cards read "consumer app";
               instrument panels are rectilinear.
@@ -36,38 +36,41 @@
 */
 
 @theme {
-  /* --- petroleum graphite ----------------------------------------------
-     Not neutral grey. Each surface carries a trace of green, which is what
-     separates an industrial panel from a default dark theme. */
-  --color-bg: #0d1110;
-  --color-panel: #151b19;
-  --color-raised: #202824;
-  --color-sunken: #080b0a;
-  --color-line: #2a322e;
-  --color-line-soft: #1e2522;
-  /* Borders only. 2.74:1 - it must never carry text. */
-  --color-hairline: #626b65;
+  /* --- black ------------------------------------------------------------
+     Near-black surfaces with a neutral cast, matching the sign-in screen.
+     Tone steps, not shadows, still separate the regions. */
+  --color-bg: #0a0a0b;
+  --color-panel: #121214;
+  --color-raised: #1b1b1f;
+  --color-sunken: #060607;
+  --color-line: #2a2a30;
+  --color-line-soft: #1d1d22;
+  /* Borders only - it must never carry text. */
+  --color-hairline: #55555d;
 
-  /* --- ink, shifted one step so the dimmest still clears 4.5:1 ---------- */
-  --color-ink: #f1f3ed;        /* 13.5:1 worst case */
-  --color-secondary: #c9cec7;  /*  9.5:1 */
-  --color-muted: #a6aea8;      /*  6.7:1 */
-  --color-dim: #8d9690;        /*  5.0:1 */
+  /* --- ink, the dimmest still clears 4.5:1 on the panel ----------------- */
+  --color-ink: #f5f5f6;
+  --color-secondary: #d4d4d8;
+  --color-muted: #a9a9b1;
+  --color-dim: #8f8f98;
 
   /* --- two accents, two jobs -------------------------------------------
-     Primary is identity and interaction. Amber is caution and NOTHING
+     Crimson is identity and interaction. Amber is caution and NOTHING
      else, so an amber element is never ambiguous. */
-  --color-accent: #b8d04a;
-  --color-accent-deep: #9dbb3a;
-  --color-accent-soft: #1d2410;
-  /* Ink for text sitting ON the accent fill. 11.0:1 on the green.
-     White fails at 1.7:1, so it is never an option on these fills. */
-  --color-on-accent: #0d1110;
+  --color-accent: #f23a49;       /* 4.8:1 on the panel, safe for small text */
+  --color-accent-deep: #c41526;
+  --color-accent-soft: #2a0c10;
+  /* White on the glossy fills, which darken where the text sits. */
+  --color-on-accent: #ffffff;
   --color-amber: #d99a32;
   --color-amber-deep: #c47d22;
 
-  /* --- HMI status, used ONLY for status --------------------------------- */
-  --color-critical: #e4735c;   /* lifted from #d65a45, which failed on raised */
+  /* --- HMI status, used ONLY for status ---------------------------------
+     Critical is a hot tomato, deliberately off the brand crimson, so an
+     alarm never reads as a button and a button never reads as an alarm.
+     Green survives only here: it MEANS "normal", and taking it away would
+     make every healthy segment look like a problem. */
+  --color-critical: #ff6a4d;
   --color-elevated: #e0a23b;
   --color-normal: #7ea64a;
 
@@ -82,44 +85,44 @@
   --color-band-low: #7ea64a;
   --color-band-moderate: #d99a32;
   --color-band-high: #d8794a;
-  --color-band-severe: #e4735c;
+  --color-band-severe: #ff6a4d;
 
   --font-sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
   --font-label: "Barlow Condensed", "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
 }
 
-/* Light theme: technical paper, not plain white. Warm off-white with a blue-
-   black ink, the way a printed drawing sheet reads. */
+/* Light theme, still on the toggle: neutral paper with the same crimson
+   identity, so switching themes changes the ground, not the brand. */
 html.light {
-  --color-bg: #e9ebe4;
-  --color-panel: #f4f5f0;
-  --color-raised: #dfe2d9;
-  --color-sunken: #d5d8ce;
-  --color-line: #c2c6ba;
-  --color-line-soft: #d3d7cb;
-  --color-hairline: #9aa093;
+  --color-bg: #f1f1f3;
+  --color-panel: #fafafa;
+  --color-raised: #e8e8eb;
+  --color-sunken: #dedee2;
+  --color-line: #cfcfd5;
+  --color-line-soft: #e2e2e6;
+  --color-hairline: #9a9aa3;
 
-  --color-ink: #10140f;
-  --color-secondary: #343a31;
-  --color-muted: #4a5147;
-  --color-dim: #5c6359;
+  --color-ink: #111113;
+  --color-secondary: #33333a;
+  --color-muted: #4b4b53;
+  --color-dim: #5e5e67;
 
-  --color-accent: #56691a;
-  --color-accent-deep: #435213;
-  --color-accent-soft: #e3e9c6;
-  --color-on-accent: #f4f5f0;
+  --color-accent: #be1e2d;
+  --color-accent-deep: #96111e;
+  --color-accent-soft: #f9dde0;
+  --color-on-accent: #ffffff;
   --color-amber: #8a5a05;
   --color-amber-deep: #6d4704;
 
-  --color-critical: #a8311c;
+  --color-critical: #c2410c;
   --color-elevated: #7d5306;
   --color-normal: #3f6318;
 
   --color-band-low: #3f6318;
   --color-band-moderate: #7d5306;
   --color-band-high: #97441c;
-  --color-band-severe: #a8311c;
+  --color-band-severe: #c2410c;
   color-scheme: light;
 }
 
@@ -207,6 +210,47 @@ body {
   border-right: 1.5px solid;
 }
 
+/* --- glossy crimson -------------------------------------------------------
+   Primary buttons and the brand mark: a lit upper half, a darker lower half
+   where the text sits (white clears 5:1 there), a highlight on the top edge
+   and a soft glow beneath. Built from the accent tokens, so the light theme
+   gets the same gloss in its own crimson. */
+.btn-gloss {
+  background-color: var(--color-accent);
+  background-image: linear-gradient(180deg,
+    color-mix(in srgb, var(--color-accent) 82%, white) 0%,
+    var(--color-accent) 46%,
+    var(--color-accent-deep) 54%,
+    color-mix(in srgb, var(--color-accent-deep) 85%, var(--color-accent)) 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.36),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 4px 16px -6px color-mix(in srgb, var(--color-accent) 70%, transparent);
+  color: #fff;
+}
+.btn-gloss { text-shadow: 0 1px 0 rgba(0, 0, 0, 0.28); }
+.btn-gloss:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.44),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 8px 24px -6px color-mix(in srgb, var(--color-accent) 80%, transparent);
+}
+
+/* --- logo tile ------------------------------------------------------------
+   The Corvex emblem keeps its own dark backdrop, so it is presented as an
+   app-icon tile: a hairline edge to seat it on either theme, and a faint
+   glow in the emblem's own amber. */
+.brand-logo {
+  display: block;
+  flex-shrink: 0;
+  object-fit: cover;
+  background: #00030a;
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.10),
+    0 2px 12px -3px rgba(255, 168, 38, 0.45);
+}
+
 /* --- HMI status lamp ----------------------------------------------------- */
 /*
   A physical indicator lamp: bright core, soft bloom. Critical pulses, because
@@ -232,6 +276,175 @@ body {
 @keyframes lamp-pulse {
   0%, 100% { opacity: 1; }
   50%      { opacity: 0.35; }
+}
+
+/* --- sign-in screen: black and glossy red ----------------------------------
+   The login screen has its own palette. Rather than restyle every element,
+   `.login-page` re-points the colour TOKENS for its subtree, so the form's
+   existing utilities (bg-bg, border-line, text-ink, text-accent, the Button)
+   pick up black and red automatically and the console keeps its own look.
+   Fixed dark whatever the theme toggle says: this screen is one look. */
+.login-page {
+  --login-red: #ef2b3b;          /* 4.9:1 on the page ground, safe for small text */
+  --login-red-bright: #ff5a66;
+  --login-red-deep: #b5101d;
+  --login-ground: #060607;
+
+  --color-bg: #0b0b0d;
+  --color-panel: #111114;
+  --color-raised: #18181c;
+  --color-sunken: #050506;
+  --color-line: #2a2a30;
+  --color-line-soft: #1c1c21;
+  --color-hairline: #4a4a52;
+  --color-ink: #f5f5f6;
+  --color-secondary: #d4d4d8;
+  --color-muted: #a1a1aa;
+  --color-dim: #8b8b94;          /* 5.9:1 on the ground */
+  --color-accent: #ef2b3b;
+  --color-accent-deep: #b5101d;
+  --color-accent-soft: #2a0a0e;
+  --color-on-accent: #ffffff;
+  --color-critical: #ff5a66;
+
+  color-scheme: dark;
+  color: var(--color-ink);
+  /* Solid ground: this also covers the console's background grid, which
+     lives on <body> and would otherwise show through. */
+  background: var(--login-ground);
+}
+
+/* Depth without a grid: a faint red bloom behind the form, like light off
+   a lacquered surface. */
+.login-form-side {
+  background:
+    radial-gradient(900px 520px at 100% 0%, rgba(239, 43, 59, 0.10), transparent 60%),
+    radial-gradient(700px 480px at 0% 100%, rgba(239, 43, 59, 0.05), transparent 65%);
+  border-left: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+/* Glossy red: a lit top half, a darker lower half, an inner highlight on the
+   top edge and a soft red glow beneath. Text sits on the darker band, where
+   white clears 5:1. */
+.login-gloss {
+  background-color: var(--login-red);
+  background-image: linear-gradient(180deg,
+    #f4505c 0%, #e01f2f 46%, #bd111f 54%, #c81626 100%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.38),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 6px 22px -8px rgba(239, 43, 59, 0.65);
+  border-radius: 3px;
+}
+.login-cta {
+  color: #fff !important;
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.28);
+  transition: filter 0.15s ease, box-shadow 0.2s ease, transform 0.15s ease;
+}
+.login-cta:hover:not(:disabled) {
+  filter: brightness(1.08);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.45),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.25),
+    0 10px 30px -8px rgba(239, 43, 59, 0.8);
+}
+.login-cta:active:not(:disabled) { transform: translateY(1px); }
+
+/* Inputs: a red focus ring, so the active field is unmistakable on black. */
+.login-page input:focus {
+  box-shadow: 0 0 0 3px rgba(239, 43, 59, 0.22);
+}
+
+/* Glossy red type for the headline's last word. */
+.login-gloss-text {
+  color: var(--login-red);
+  background-image: linear-gradient(180deg, #ff7a84 0%, #ef2b3b 55%, #b5101d 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+/* Neutral status light: red would read as an alarm, green is gone. */
+.login-lamp { color: #f5f5f6; }
+
+/* --- sign-in hero (photo panel) ------------------------------------------ */
+.login-hero {
+  background: var(--login-ground, #060607);
+  color: #f5f5f6;
+  isolation: isolate;
+}
+
+/* The photograph as taken: natural colour, no tint, no desaturation. */
+.login-hero-photo {
+  object-position: 50% 40%;
+}
+
+/* Shade only where text needs it. A light band behind the status chips at
+   the top, the middle left completely clear, and black only across the
+   bottom third where the headline sits. */
+.login-hero-grade {
+  background: linear-gradient(180deg,
+    rgba(6, 6, 7, 0.40) 0%,
+    rgba(6, 6, 7, 0) 14%,
+    rgba(6, 6, 7, 0) 50%,
+    rgba(6, 6, 7, 0.72) 70%,
+    rgba(6, 6, 7, 0.95) 86%,
+    #060607 100%);
+}
+
+/* Corner brackets at hero scale, in red. */
+.hero-tick {
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-color: var(--login-red, #ef2b3b);
+  border-width: 0;
+  opacity: 0.9;
+  pointer-events: none;
+}
+.hero-tick.border-t { border-top-width: 1.5px; }
+.hero-tick.border-b { border-bottom-width: 1.5px; }
+.hero-tick.border-l { border-left-width: 1.5px; }
+.hero-tick.border-r { border-right-width: 1.5px; }
+
+/* Readable over a bright sky: a frosted black chip, not a heavier overlay
+   on the whole photo. */
+.hero-chip {
+  background: rgba(6, 6, 7, 0.6);
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  border: 1px solid rgba(255, 255, 255, 0.10);
+  padding: 7px 11px;
+}
+.hero-label { color: rgba(245, 245, 246, 0.74); }
+
+.hero-title {
+  font-family: var(--font-label);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+  line-height: 0.95;
+  font-size: clamp(38px, 3.6vw, 56px);
+  color: #f5f5f6;
+}
+
+/* --- fleet map legend -----------------------------------------------------
+   Sits on the map, which is darkened imagery in both themes, so it is a
+   dark glass chip in both themes. Theme tokens would put dark ink on dark
+   ground in the light theme. */
+.map-legend {
+  background: rgba(13, 17, 16, 0.72);
+  -webkit-backdrop-filter: blur(4px);
+  backdrop-filter: blur(4px);
+  border: 1px solid rgba(241, 243, 237, 0.12);
+}
+.map-legend-text {
+  font-family: var(--font-label);
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  font-size: 9px;
+  color: rgba(241, 243, 237, 0.82);
 }
 
 /* --- view transition -----------------------------------------------------

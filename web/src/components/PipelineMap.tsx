@@ -83,6 +83,57 @@ const BBOX_CENTRE: [number, number] = [
   (BBOX.lonMin + BBOX.lonMax) / 2,
 ];
 
+/* Colours for the CANVAS, as literals.
+ *
+ * A canvas cannot resolve CSS custom properties. A fillStyle of
+ * 'var(--color-band-low)' is rejected as invalid and the PREVIOUS fillStyle
+ * silently stays in force. That is how every marker used to come out the
+ * same dark colour as the imagery wash, in both themes, with no error.
+ *
+ * Fixed across themes on purpose. The ground under them is imagery darkened
+ * for contrast whichever theme is active, so the light theme's inks (made
+ * for paper) would vanish here. These are tuned to read over dark ground. */
+export const MAP_INK = {
+  critical: '#ff6b4f',
+  elevated: '#f2b33d',
+  normal: '#8ec356',
+  // Silver, not a hue: hues on this map mean risk, and a coloured line would
+  // compete with the markers sitting on it.
+  corridor: '#cfd2d8',
+  // White, not amber: amber already means "elevated", and with over half the
+  // fleet in an HCA an amber ring turned every corridor the alarm colour.
+  hca: 'rgba(241, 243, 237, 0.75)',
+  casing: 'rgba(8, 10, 12, 0.8)',
+} as const;
+
+/** Marker size grows with risk, so severity reads from size as well as hue
+ *  (which also keeps it legible for colour-blind readers). */
+function markerRadius(risk: number): number {
+  return 2 + (risk / 100) * 3.2;
+}
+
+function markerColor(band: string): string {
+  return band === 'critical' ? MAP_INK.critical
+    : band === 'elevated' ? MAP_INK.elevated : MAP_INK.normal;
+}
+
+/** A geographic box, for fitting the opening view to a user's scope. */
+export interface GeoBox { latMin: number; latMax: number; lonMin: number; lonMax: number }
+
+/** Fractional zoom and centre that fit `b` in a w x h canvas with a margin.
+ *  Centred in MERCATOR space, so the box sits visually centred rather than
+ *  drifting north, which a plain average of latitudes would do. */
+function fitBox(w: number, h: number, b: GeoBox, pad = 0.2): { zoom: number; centre: [number, number] } {
+  const lonFrac = Math.max(b.lonMax - b.lonMin, 0.6) / 360;
+  const yTop = mercY(b.latMax, 1);
+  const yBot = mercY(b.latMin, 1);
+  const latFrac = Math.max(yBot - yTop, 0.6 / 360);
+  const z = Math.min(Math.log2(w / (TILE * lonFrac)), Math.log2(h / (TILE * latFrac)));
+  const k = Math.exp((0.5 - (yTop + yBot) / 2) * 4 * Math.PI);
+  const lat = (Math.asin((k - 1) / (k + 1)) * 180) / Math.PI;
+  return { zoom: z - Math.log2(1 + 2 * pad), centre: [lat, (b.lonMin + b.lonMax) / 2] };
+}
+
 function mercX(lon: number, world: number): number {
   return ((lon + 180) / 360) * world;
 }
@@ -157,6 +208,83 @@ function toPx(lat: number, lon: number, v: View): [number, number] {
   ];
 }
 
+/* ======================================================= tile cache ===== */
+
+/* Every tile is tracked through an explicit lifecycle.
+ *
+ * The first version kept bare Image objects in a map, and judged "the
+ * imagery provider is down" from whichever handful of tiles one view change
+ * happened to request. Both choices failed in ordinary use:
+ *
+ *   A tile requested by one view and arriving after the next was discarded,
+ *   but its key stayed in the cache, so it was never requested again. A fast
+ *   wheel zoom left the map permanently blank while every tile request in
+ *   the network log showed 200.
+ *
+ *   After a zoom step only one or two tiles are new. If those two failed —
+ *   a slow upstream response, the dev server restarting under --reload — "all
+ *   of this batch failed" was read as "imagery is unavailable", and the map
+ *   switched to the vector basemap for the rest of the session.
+ *
+ * So: tiles are never discarded because the view moved on, failures are
+ * retried with backoff, and imagery is only declared down after a run of
+ * consecutive failures with no success in between — and it recovers on the
+ * first tile that loads. */
+type TileState = 'loading' | 'ready' | 'failed';
+
+interface TileEntry {
+  img: HTMLImageElement;
+  state: TileState;
+  attempts: number;
+  /** Earliest time a failed tile may be asked for again. */
+  retryAt: number;
+  /** Present while the bytes are in flight, so a stale request can be cut. */
+  ctrl: AbortController | null;
+  /** Object URL once the bytes have arrived. Must be revoked on eviction. */
+  url: string | null;
+}
+
+/** Backoff for a failed tile; the last step repeats indefinitely.
+ *
+ *  Short at first, so a dev-server restart heals while the user is still
+ *  looking at the map. Never abandoned: an earlier version gave up after four
+ *  attempts, which turned a thirty-second wifi drop into holes that lasted
+ *  the rest of the session. Only ON-SCREEN tiles are retried, so a provider
+ *  that is genuinely down costs a view's worth of requests per thirty
+ *  seconds, not a flood. */
+const RETRY_MS = [1500, 5000, 15000, 30000];
+
+/** Consecutive failures, with no success between them, before the imagery is
+ *  reported as interrupted. One view's worth of tiles, roughly. */
+const DEGRADED_AFTER = 6;
+
+/** Wheel zoom produces a new view every few milliseconds. Requesting tiles
+ *  for each one fetches every intermediate level and buries the tiles the
+ *  user finally stops on behind them in the browser's request queue. */
+const SETTLE_MS = 140;
+
+/** Held images. Off-screen tiles beyond this are evicted oldest-first. */
+const MAX_CACHED_TILES = 360;
+
+/** Tile index range of a view, at any level — not only the view's own. The
+ *  painter uses other levels as placeholders while the current one loads. */
+function tileRange(v: View, z: number) {
+  const f = 2 ** (z - v.zoom);          // level-z tiles per view-level tile
+  const span = 2 ** z;
+  return {
+    f,
+    span,
+    x0: Math.floor((v.offX * f) / TILE),
+    x1: Math.floor(((v.offX + v.w / v.scale) * f) / TILE),
+    y0: Math.max(0, Math.floor((v.offY * f) / TILE)),
+    y1: Math.min(span - 1, Math.floor(((v.offY + v.h / v.scale) * f) / TILE)),
+  };
+}
+
+/** Wrap a tile column round the antimeridian rather than asking for a column
+ *  that does not exist, which the backend refuses with a 502. */
+const wrapX = (tx: number, span: number) => ((tx % span) + span) % span;
+
 /* ====================================================== hover index ===== */
 
 const CELL = 24; // px
@@ -183,29 +311,47 @@ interface Props {
   config: MapConfig | null;
   selected: string | null;
   onPick: (id: string) => void;
+  /** Where the map opens. A zone-scoped user should land on their zone, not
+   *  on a country where all of their work is one smudge. Derived from the
+   *  user's SCOPE, which is fixed for the session; never from a filter. */
+  focus?: GeoBox | null;
 }
 
-function PipelineMapInner({ segments, routes, config, selected, onPick }: Props) {
+function PipelineMapInner({ segments, routes, config, selected, onPick, focus = null }: Props) {
   const wrapRef = useRef<HTMLDivElement>(null);
   const baseRef = useRef<HTMLCanvasElement>(null);
   const overRef = useRef<HTMLCanvasElement>(null);
 
   const [size, setSize] = useState({ w: 0, h: 0 });
   const [hover, setHover] = useState<Segment | null>(null);
-  const [tilesFailed, setTilesFailed] = useState(false);
 
-  // Loaded tile images, keyed z/x/y. Kept in a ref: this changes as images
-  // arrive and must not re-render the tree each time.
-  const tileCache = useRef(new Map<string, HTMLImageElement>());
+  // Tiles keyed z/x/y. A ref, not state: entries change as bytes arrive, and
+  // re-rendering the tree per tile would be pointless — `tileTick` is the one
+  // signal the painter needs.
+  const tiles = useRef(new Map<string, TileEntry>());
   const [tileTick, setTileTick] = useState(0);
+  const [retryTick, setRetryTick] = useState(0);
 
-  /* Object URLs behind those images. They must be revoked, or every tile
-     ever fetched stays resident for the life of the document — a leak that
-     only shows up after a long session with a lot of panning. */
-  const blobUrls = useRef(new Set<string>());
-  useEffect(() => () => {
-    blobUrls.current.forEach((u) => URL.revokeObjectURL(u));
-    blobUrls.current.clear();
+  /* Imagery health, for the footer. Derived from a run of CONSECUTIVE
+     failures rather than from any one batch, and reset by the first success,
+     so a momentary failure cannot switch the basemap off for good. */
+  const failStreak = useRef(0);
+  const [imagery, setImagery] = useState<'ok' | 'retrying'>('ok');
+
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    const map = tiles.current;
+    return () => {
+      mounted.current = false;
+      // Object URLs must be revoked, or every tile ever fetched stays
+      // resident for the life of the document.
+      for (const e of map.values()) {
+        e.ctrl?.abort();
+        if (e.url) URL.revokeObjectURL(e.url);
+      }
+      map.clear();
+    };
   }, []);
 
   /* --------------------------------------------------------- sizing --- */
@@ -231,12 +377,22 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
     [size.w, size.h],
   );
 
+  /* "Home": the user's scope if they have one, else the whole country. The
+     fit button and an untouched camera both resolve to it. */
+  const focusFit = useMemo(() => {
+    if (!focus || !size.w || !size.h) return null;
+    const f = fitBox(size.w, size.h, focus);
+    return { zoom: Math.min(Math.max(f.zoom, fitZ), fitZ + MAX_ZOOM_IN), centre: f.centre };
+  }, [focus, size.w, size.h, fitZ]);
+  const homeZ = focusFit ? focusFit.zoom : fitZ;
+  const homeC = focusFit ? focusFit.centre : BBOX_CENTRE;
+
   const view = useMemo(() => {
     if (!size.w || !size.h) return null;
-    const z = cam ? cam.zoom : fitZ;
-    const c = cam ? cam.centre : BBOX_CENTRE;
+    const z = cam ? cam.zoom : homeZ;
+    const c = cam ? cam.centre : homeC;
     return makeView(size.w, size.h, z, c);
-  }, [size.w, size.h, cam, fitZ]);
+  }, [size.w, size.h, cam, homeZ, homeC]);
 
   /* ---------------------------------------------------------- zooming -- */
   const clampZoom = useCallback(
@@ -250,8 +406,8 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
   const zoomAbout = useCallback((delta: number, px?: number, py?: number) => {
     setCam((prev) => {
       if (!size.w || !size.h) return prev;
-      const curZ = prev ? prev.zoom : fitZ;
-      const curC = prev ? prev.centre : BBOX_CENTRE;
+      const curZ = prev ? prev.zoom : homeZ;
+      const curC = prev ? prev.centre : homeC;
       const nextZ = clampZoom(curZ + delta);
       if (nextZ === curZ) return prev;
       if (px === undefined || py === undefined) {
@@ -269,7 +425,7 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
         ],
       };
     });
-  }, [size.w, size.h, fitZ, clampZoom]);
+  }, [size.w, size.h, homeZ, homeC, clampZoom]);
 
   const resetView = useCallback(() => setCam(null), []);
 
@@ -331,57 +487,125 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
   );
 
   /* ------------------------------------------------------ tile loading -- */
-  useEffect(() => {
-    if (!view || !config?.available || tilesFailed) return;
-    const { zoom, scale, offX, offY, w, h } = view;
-    const span = 2 ** zoom;
-    const x0 = Math.floor(offX / TILE);
-    const x1 = Math.floor((offX + w / scale) / TILE);
-    const y0 = Math.floor(offY / TILE);
-    const y1 = Math.floor((offY + h / scale) / TILE);
 
-    let cancelled = false;
-    let failures = 0;
-    let requested = 0;
+  /** Fetch one tile. Its result is kept whatever the view has done since:
+   *  a tile is valid for its z/x/y no matter which view asked for it, and
+   *  throwing a finished download away is what left the map blank. */
+  const requestTile = useCallback((key: string, attempts: number) => {
+    const ctrl = new AbortController();
+    const entry: TileEntry = {
+      img: new Image(), state: 'loading', attempts, retryAt: 0, ctrl, url: null,
+    };
+    tiles.current.set(key, entry);
 
-    const wanted: string[] = [];
-    for (let ty = y0; ty <= y1; ty++) {
-      for (let tx = x0; tx <= x1; tx++) {
-        if (ty < 0 || ty >= span) continue;
-        const wx = ((tx % span) + span) % span;   // wrap, so no 502 at the edge
-        const key = `${zoom}/${wx}/${ty}`;
-        if (tileCache.current.has(key)) continue;
-        wanted.push(key);
-      }
-    }
+    const fail = () => {
+      if (!mounted.current || tiles.current.get(key) !== entry) return;
+      entry.state = 'failed';
+      entry.ctrl = null;
+      entry.attempts += 1;
+      entry.retryAt = Date.now() + RETRY_MS[Math.min(entry.attempts - 1, RETRY_MS.length - 1)];
+      failStreak.current += 1;
+      if (failStreak.current >= DEGRADED_AFTER) setImagery('retrying');
+      setRetryTick((t) => t + 1);   // let the loader schedule the retry
+    };
 
-    for (const key of wanted) {
-      requested += 1;
-      const img = new Image();
-      tileCache.current.set(key, img);
-
-      // fetch, NOT img.src. The tile route is authenticated and an <img>
-      // cannot send an Authorization header — every request came back 401,
-      // and the vector fallback quietly covered for it.
-      api.mapTile(key)
-        .then((url) => {
-          if (cancelled) { URL.revokeObjectURL(url); return; }
-          blobUrls.current.add(url);
-          img.onload = () => { if (!cancelled) setTileTick((t) => t + 1); };
-          img.src = url;
-        })
-        .catch(() => {
-          tileCache.current.delete(key);
-          failures += 1;
-          // One dead tile is a gap. All of them means the provider is not
-          // working, and the vector outline is the honest answer.
-          if (!cancelled && requested > 0 && failures >= requested) {
-            setTilesFailed(true);
+    // fetch, NOT img.src. The tile route is authenticated and an <img>
+    // cannot send an Authorization header — every request came back 401,
+    // and the vector fallback quietly covered for it.
+    api.mapTile(key, ctrl.signal)
+      .then((url) => {
+        if (!mounted.current || tiles.current.get(key) !== entry) {
+          URL.revokeObjectURL(url);
+          return;
+        }
+        entry.url = url;
+        entry.ctrl = null;
+        entry.img.onload = () => {
+          if (tiles.current.get(key) !== entry) return;
+          entry.state = 'ready';
+          if (failStreak.current > 0) {
+            // The provider is answering again. Every tile that failed during
+            // the gap gets a fresh start now, rather than waiting out a
+            // backoff that was sized for an outage which has ended.
+            for (const e of tiles.current.values()) {
+              if (e.state === 'failed') { e.attempts = 0; e.retryAt = 0; }
+            }
+            setRetryTick((t) => t + 1);
           }
-        });
-    }
-    return () => { cancelled = true; };
-  }, [view, config?.available, tilesFailed]);
+          failStreak.current = 0;
+          setImagery('ok');            // no re-render when already 'ok'
+          setTileTick((t) => t + 1);
+        };
+        entry.img.onerror = fail;
+        entry.img.src = url;
+      })
+      .catch(() => {
+        // Aborted because the view moved past it: not a failure, and must
+        // not count toward declaring the imagery down.
+        if (ctrl.signal.aborted) return;
+        fail();
+      });
+  }, []);
+
+  useEffect(() => {
+    if (!view || !config?.available) return;
+    let retryTimer: number | undefined;
+
+    const settle = window.setTimeout(() => {
+      const map = tiles.current;
+      const r = tileRange(view, view.zoom);
+      const wanted: string[] = [];
+      for (let ty = r.y0; ty <= r.y1; ty++) {
+        for (let tx = r.x0; tx <= r.x1; tx++) {
+          wanted.push(`${view.zoom}/${wrapX(tx, r.span)}/${ty}`);
+        }
+      }
+      const onScreen = new Set(wanted);
+
+      // Cut downloads for tiles no longer on screen. Only ones still on the
+      // wire: once the bytes are here, decoding is local and free to finish.
+      for (const [key, e] of map) {
+        if (e.state === 'loading' && e.url === null && !onScreen.has(key)) {
+          e.ctrl?.abort();
+          map.delete(key);
+        }
+      }
+
+      const now = Date.now();
+      let nextRetry = Infinity;
+      for (const key of wanted) {
+        const e = map.get(key);
+        if (e && (e.state === 'ready' || e.state === 'loading')) continue;
+        if (e && e.state === 'failed' && e.retryAt > now) {
+          nextRetry = Math.min(nextRetry, e.retryAt);
+          continue;
+        }
+        requestTile(key, e?.attempts ?? 0);
+      }
+
+      // Evict the oldest off-screen tiles once over budget. Map iteration is
+      // insertion order, which is a good enough proxy for least recent.
+      if (map.size > MAX_CACHED_TILES) {
+        for (const [key, e] of map) {
+          if (map.size <= MAX_CACHED_TILES) break;
+          if (onScreen.has(key) || e.state === 'loading') continue;
+          if (e.url) URL.revokeObjectURL(e.url);
+          map.delete(key);
+        }
+      }
+
+      if (nextRetry < Infinity) {
+        retryTimer = window.setTimeout(
+          () => setRetryTick((t) => t + 1), Math.max(0, nextRetry - now) + 20,
+        );
+      }
+    }, SETTLE_MS);
+
+    return () => {
+      window.clearTimeout(settle);
+      window.clearTimeout(retryTimer);
+    };
+  }, [view, config?.available, retryTick, requestTile]);
 
   /* --------------------------------------------------------- base paint - */
   useEffect(() => {
@@ -402,32 +626,43 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
     g.fillStyle = tok('--color-bg', '#0d1013');
     g.fillRect(0, 0, view.w, view.h);
 
-    const showTiles = config?.available && !tilesFailed;
     let drewTile = false;
-    if (showTiles) {
-      const span = 2 ** view.zoom;
-      const x0 = Math.floor(view.offX / TILE);
-      const x1 = Math.floor((view.offX + view.w / view.scale) / TILE);
-      const y0 = Math.floor(view.offY / TILE);
-      const y1 = Math.floor((view.offY + view.h / view.scale) / TILE);
-      for (let ty = y0; ty <= y1; ty++) {
-        for (let tx = x0; tx <= x1; tx++) {
-          if (ty < 0 || ty >= span) continue;
-          const wx = ((tx % span) + span) % span;
-          const img = tileCache.current.get(`${view.zoom}/${wx}/${ty}`);
-          if (!img || !img.complete || !img.naturalWidth) continue;
-          const dw = TILE * view.scale;
-          g.drawImage(
-            img,
-            (tx * TILE - view.offX) * view.scale,
-            (ty * TILE - view.offY) * view.scale,
-            // +1 closes the hairline seams sub-pixel scaling leaves between
-            // adjacent tiles, which read as a grid drawn over the map.
-            dw + 1, dw + 1,
-          );
-          drewTile = true;
+    if (config?.available) {
+      const cache = tiles.current;
+      const drawLevel = (z: number) => {
+        if (z < MIN_TILE_Z || z > MAX_TILE_Z) return;
+        const r = tileRange(view, z);
+        const dw = (TILE / r.f) * view.scale;
+        for (let ty = r.y0; ty <= r.y1; ty++) {
+          for (let tx = r.x0; tx <= r.x1; tx++) {
+            const e = cache.get(`${z}/${wrapX(tx, r.span)}/${ty}`);
+            if (!e || e.state !== 'ready' || !e.img.naturalWidth) continue;
+            g.drawImage(
+              e.img,
+              ((tx * TILE) / r.f - view.offX) * view.scale,
+              ((ty * TILE) / r.f - view.offY) * view.scale,
+              // +1 closes the hairline seams sub-pixel scaling leaves between
+              // adjacent tiles, which read as a grid drawn over the map.
+              dw + 1, dw + 1,
+            );
+            drewTile = true;
+          }
         }
-      }
+      };
+
+      /* Placeholders from OTHER levels, under the current one.
+       *
+       * Crossing a zoom level means none of the new level's tiles are
+       * loaded yet. Drawing only the current level made every level change
+       * fall through to the vector outline for as long as the new tiles took
+       * — seconds, on uncached imagery — which read as the satellite map
+       * switching itself off. Coarser levels, scaled up, cover the gap
+       * blurrily; the next finer level covers it after a zoom-out. Current
+       * level last, so sharp tiles replace blurry ones as they arrive. This
+       * is what every web map library does, for the same reason. */
+      for (let z = MIN_TILE_Z; z < view.zoom; z++) drawLevel(z);
+      drawLevel(view.zoom + 1);
+      drawLevel(view.zoom);
       /* Knock the basemap back so the segments read on top of it. The
          amount depends on WHAT the basemap is: photographic imagery is far
          busier than a vector basemap - every field boundary and cloud is
@@ -474,40 +709,56 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
         if (i === 0) g.moveTo(x, y); else g.lineTo(x, y);
       });
       // A dark casing first, so the line reads over bright satellite ground.
-      g.strokeStyle = 'rgba(8,10,12,0.72)';
+      g.strokeStyle = MAP_INK.casing;
       g.lineWidth = 4.5;
       g.stroke();
-      g.strokeStyle = tok('--color-accent', '#f5a524');
+      g.strokeStyle = MAP_INK.corridor;
       g.lineWidth = 1.7;
-      g.globalAlpha = 0.85;
+      g.globalAlpha = 0.8;
       g.stroke();
       g.globalAlpha = 1;
     }
 
     // --- segments -------------------------------------------------------
-    const ringColor = tok('--color-accent', '#f5a524');
+    /* Detail follows zoom. At country scale thousands of markers overlap
+       along each corridor, and halos and rings drawn there do not add
+       information, they add colour: the critical halos alone painted whole
+       corridors red while 85% of the fleet is normal. So the map at a
+       glance must tell the same story as the risk mix. Rings and halos
+       appear once the markers have room to separate. */
+    const zoomedIn = view.zoom + Math.log2(view.scale) - fitZ >= 1.1;
+    const shrink = zoomedIn ? 1 : 0.8;
     for (const p of pts) {
-      const r = 1.5 + (p.s.risk_score / 100) * 2.9;
-      if (p.s.is_hca) {
+      const r = markerRadius(p.s.risk_score) * shrink;
+      const band = p.s.risk_band;
+      const ink = markerColor(band);
+      if (zoomedIn && band === 'critical') {
+        // The alarm state finds the eye first, as the console's lamps do.
         g.beginPath();
-        g.arc(p.x, p.y, r + 2.1, 0, Math.PI * 2);
-        g.strokeStyle = ringColor;
-        g.globalAlpha = 0.4;
+        g.arc(p.x, p.y, r + 3.2, 0, Math.PI * 2);
+        g.fillStyle = ink;
+        g.globalAlpha = 0.2;
+        g.fill();
+        g.globalAlpha = 1;
+      }
+      if (zoomedIn && p.s.is_hca) {
+        g.beginPath();
+        g.arc(p.x, p.y, r + 2, 0, Math.PI * 2);
+        g.strokeStyle = MAP_INK.hca;
         g.lineWidth = 0.8;
         g.stroke();
-        g.globalAlpha = 1;
       }
       g.beginPath();
       g.arc(p.x, p.y, r, 0, Math.PI * 2);
-      g.fillStyle = BAND_COLOR[toBand(p.s.risk_band)];
-      g.globalAlpha = 0.9;
+      g.fillStyle = ink;
+      g.globalAlpha = band === 'normal' ? 0.8 : 1;
       g.fill();
       g.globalAlpha = 1;
-      g.lineWidth = 0.6;
-      g.strokeStyle = 'rgba(8,10,12,0.85)';
+      g.lineWidth = 0.8;
+      g.strokeStyle = MAP_INK.casing;
       g.stroke();
     }
-  }, [view, pts, routes, config?.available, tilesFailed, tileTick]);
+  }, [view, pts, routes, config?.available, config?.provider, tileTick, fitZ]);
 
   /* ------------------------------------------------------ overlay paint - */
   useEffect(() => {
@@ -524,21 +775,24 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
     const mark = (s: Segment, ring: string, width: number) => {
       if (s.latitude == null || s.longitude == null) return;
       const [x, y] = toPx(s.latitude, s.longitude, view);
-      const r = 1.5 + (s.risk_score / 100) * 2.9;
+      const r = markerRadius(s.risk_score);
       g.beginPath();
       g.arc(x, y, r + 4.5, 0, Math.PI * 2);
+      g.strokeStyle = MAP_INK.casing;
+      g.lineWidth = width + 2;
+      g.stroke();
       g.strokeStyle = ring;
       g.lineWidth = width;
       g.stroke();
       g.beginPath();
-      g.arc(x, y, r, 0, Math.PI * 2);
-      g.fillStyle = BAND_COLOR[toBand(s.risk_band)];
+      g.arc(x, y, r + 0.5, 0, Math.PI * 2);
+      g.fillStyle = markerColor(s.risk_band);
       g.fill();
     };
 
     const sel = selected ? segments.find((s) => s.segment_id === selected) : null;
-    if (sel) mark(sel, '#e8e6e1', 2);
-    if (hover && hover.segment_id !== selected) mark(hover, '#f5a524', 1.6);
+    if (sel) mark(sel, '#ffffff', 2);
+    if (hover && hover.segment_id !== selected) mark(hover, MAP_INK.corridor, 1.6);
   }, [hover, selected, segments, view]);
 
   /* ------------------------------------------------------------ pointer - */
@@ -582,15 +836,15 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
         // at the centre is the one currently (dx, dy) BEHIND it. Measured
         // from the view the drag started in, so a long drag cannot creep
         // from accumulated rounding.
-        const start = makeView(view.w, view.h, cam ? cam.zoom : fitZ, d.centre);
+        const start = makeView(view.w, view.h, cam ? cam.zoom : homeZ, d.centre);
         const centre = toLatLon(view.w / 2 - dx, view.h / 2 - dy, start);
-        setCam({ zoom: cam ? cam.zoom : fitZ, centre });
+        setCam({ zoom: cam ? cam.zoom : homeZ, centre });
         return;
       }
       const found = hitTest(ev);
       setHover((prev) => (prev?.segment_id === found?.segment_id ? prev : found));
     },
-    [hitTest, view, cam, fitZ],
+    [hitTest, view, cam, homeZ],
   );
 
   const onClick = useCallback(
@@ -634,20 +888,21 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
         <div className="absolute right-2 top-2 flex flex-col border border-line-soft
                         bg-panel/92">
           <MapBtn label="Zoom in" onClick={() => zoomAbout(0.7)}
-                  disabled={!!view && cam !== null && cam.zoom >= fitZ + MAX_ZOOM_IN - 0.01}>
+                  disabled={!!view && (cam ? cam.zoom : homeZ) >= fitZ + MAX_ZOOM_IN - 0.01}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
               <path d="M12 5v14M5 12h14" />
             </svg>
           </MapBtn>
           <MapBtn label="Zoom out" onClick={() => zoomAbout(-0.7)}
-                  disabled={!cam || cam.zoom <= fitZ - 0.34}>
+                  disabled={(cam ? cam.zoom : homeZ) <= fitZ - 0.34}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" strokeWidth="2.2" aria-hidden="true">
               <path d="M5 12h14" />
             </svg>
           </MapBtn>
-          <MapBtn label="Fit to India" onClick={resetView} disabled={!cam}>
+          <MapBtn label={focus ? 'Fit to my zone' : 'Fit to India'} onClick={resetView}
+                  disabled={!cam}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" strokeWidth="2" aria-hidden="true">
               <path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5" />
@@ -663,6 +918,34 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
             </span>
           </div>
         )}
+
+        {/* Legend, on the map rather than under it: the key belongs next to
+            the thing it decodes. A dark glass chip in every theme, because
+            it sits on darkened imagery in every theme. */}
+        <div className="map-legend pointer-events-none absolute bottom-2 left-2 flex
+                        items-center gap-3 px-2.5 py-1.5">
+          {([
+            ['Critical', MAP_INK.critical],
+            ['Elevated', MAP_INK.elevated],
+            ['Normal', MAP_INK.normal],
+          ] as const).map(([label, ink]) => (
+            <span key={label} className="flex items-center gap-1.5">
+              <span className="inline-block h-[8px] w-[8px] rounded-full"
+                    style={{ background: ink, boxShadow: `0 0 0 1px ${MAP_INK.casing}` }} />
+              <span className="map-legend-text">{label}</span>
+            </span>
+          ))}
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-[10px] w-[10px] rounded-full"
+                  style={{ border: `1.5px solid ${MAP_INK.hca}` }} />
+            <span className="map-legend-text">HCA</span>
+          </span>
+          <span className="flex items-center gap-1.5">
+            <span className="inline-block h-[2px] w-[14px]"
+                  style={{ background: MAP_INK.corridor }} />
+            <span className="map-legend-text">Corridor</span>
+          </span>
+        </div>
       </div>
 
       {/* Readout pinned below rather than following the cursor: a floating
@@ -693,9 +976,15 @@ function PipelineMapInner({ segments, routes, config, selected, onPick }: Props)
             </span>
             <div className="flex-1" />
             <span className="text-dim" style={{ fontSize: 9.5 }}>
-              {tilesFailed || !config?.available
+              {/* Says what is actually happening. "Interrupted" rather than
+                  "unavailable": after a dev-server restart it heals within
+                  seconds, and the reader should not go hunting for a
+                  configuration problem that does not exist. */}
+              {!config?.available
                 ? 'vector basemap'
-                : config.attribution}
+                : imagery === 'retrying'
+                  ? 'imagery interrupted · retrying'
+                  : config.attribution}
             </span>
           </>
         )}

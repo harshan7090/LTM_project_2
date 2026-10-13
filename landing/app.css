@@ -1,599 +1,560 @@
-/* Corvex — public landing page.
+/* CORVEX landing — the reading layer over the journey.
  *
- * ONE SCENE, SECTIONS OVER IT
+ * The page is one fixed WebGL scene with fixed HTML on top of it and a tall
+ * empty element behind both to give the scrollbar something to travel. So
+ * almost nothing here is in normal flow, and there is no section layout to
+ * speak of.
  *
- *   The WebGL canvas is position:fixed behind everything. Sections scroll
- *   OVER it, mostly transparent, with a scrim keeping type legible. That is
- *   what makes the page read as one continuous journey instead of a stack
- *   of slides: the camera never restarts, because there is only ever one
- *   camera.
- *
- * THE PALETTE
- *
- *   Identical to the console (web/src/index.css). The landing and the
- *   product must not look like two companies, and the fastest way to make
- *   them look like two is to let their palettes drift.
- *
- *   Two accents, two jobs: oil-green is identity and interaction, amber is
- *   caution and nothing else. Every text token clears 4.5:1 on the ground -
- *   measured, not guessed.
- *
- * MOTION
- *
- *   Everything animated is opacity or transform, so none of it triggers
- *   layout. The reduced-motion block at the end is not a courtesy: it stops
- *   the loops outright rather than shortening them, because a 0.01ms loop
- *   is a flicker, which is worse than the animation it replaced.
+ * COLOUR
+ *   Tokens mirror web/landing-src/palette.ts exactly. Every text colour was
+ *   checked against both surfaces before use — the tightest is --muted at
+ *   7.9:1 on --bg. Three earlier palettes in this project shipped a grey
+ *   nobody could read, which is why these carry their ratios in comments.
  */
 
-/* ============================================================= tokens == */
 :root {
-  --bg: #0d1110;
-  --panel: #151b19;
-  --raised: #202824;
-  --sunken: #080b0a;
-  --line: #2a322e;
-  --line-soft: #1e2522;
+  --bg:       #05070A;
+  --panel:    #0D1117;
+  --cyan:     #00D4FF;  /* 11.4:1 on --bg */
+  --blue:     #3A8DFF;  /*  6.2:1 */
+  --warn:     #FF8A00;  /*  8.5:1 */
+  --critical: #FF4D4D;  /*  6.2:1 */
+  --success:  #2ECC71;  /*  9.6:1 */
+  --text:     #E8EEF5;  /* 17.3:1 */
+  --muted:    #94A3B8;  /*  7.9:1 */
+  --on-accent: #05070A;
 
-  --ink: #f1f3ed;        /* 13.5:1 on --bg */
-  --body: #c9cec7;       /*  9.5:1 */
-  --muted: #a6aea8;      /*  6.7:1 */
-  --dim: #8d9690;        /*  5.0:1 — the dimmest text used anywhere */
+  --sans: 'IBM Plex Sans', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --cond: 'Barlow Condensed', var(--sans);
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
 
-  --accent: #b8d04a;
-  --accent-deep: #9dbb3a;
-  --on-accent: #0d1110;  /* 11.0:1 on the accent fill; white fails at 1.7 */
-  --amber: #d99a32;
-
-  --good: #7ea64a;
-  --warn: #e0a23b;
-  --bad: #e4735c;
-
-  --sans: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
-  --mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
-  --cond: "Barlow Condensed", "IBM Plex Sans Condensed", "Arial Narrow", sans-serif;
-
-  --gutter: clamp(1.15rem, 4vw, 4.5rem);
-  --maxw: 1240px;
+  --gutter: clamp(20px, 4vw, 64px);
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 * { box-sizing: border-box; }
 
-html {
-  background: var(--bg);
-  scroll-behavior: smooth;
-  scroll-padding-top: 90px;
-}
-
-body {
+html, body {
   margin: 0;
-  /* Shows for the instant before the scene paints, and behind the flat
-     fallback. A daylight horizon rather than black, so a slow first frame
-     is not a black flash. */
-  background: linear-gradient(180deg, #6f9ec6 0%, #d6d7c4 52%, #5d7a3c 52%, #4a6330 100%);
-  background-attachment: fixed;
-  color: var(--body);
+  padding: 0;
+  background: var(--bg);
+  color: var(--text);
   font-family: var(--sans);
   font-weight: 300;
-  font-size: 16px;
-  line-height: 1.65;
   -webkit-font-smoothing: antialiased;
-  overflow-x: hidden;
 }
 
-.wrap {
-  width: 100%;
-  max-width: var(--maxw);
-  margin: 0 auto;
-  padding-inline: var(--gutter);
-  position: relative;
-}
+/* Lenis drives the scroll; the browser must not also smooth it. */
+html { scroll-behavior: auto; }
+body { overflow-x: hidden; }
 
-.label {
-  font-family: var(--cond);
-  font-size: 12px;
-  font-weight: 600;
-  letter-spacing: .17em;
-  text-transform: uppercase;
-  color: var(--dim);
-}
-.num { font-family: var(--mono); font-variant-numeric: tabular-nums; }
+a { color: inherit; }
 
-/* Screen-reader-only. Carries the finished sentence for a counter whose
-   visible figure is aria-hidden while it animates - a counter mid-flight
-   reads aloud as nonsense. */
 .sr-only {
-  position: absolute; width: 1px; height: 1px;
-  padding: 0; margin: -1px; overflow: hidden;
-  clip: rect(0 0 0 0); white-space: nowrap; border: 0;
-}
-
-/* A live indicator beside a figure, as the reference pairs them. The ring
-   expands and fades; the core stays put, so it reads as a pulse rather
-   than as something throbbing. */
-.pulse {
-  position: relative; display: inline-flex;
-  width: 7px; height: 7px; flex-shrink: 0;
-}
-.pulse i, .pulse b {
-  position: absolute; inset: 0; border-radius: 50%;
-  background: var(--accent); display: block;
-}
-.pulse i { animation: pulse-ring 2.4s cubic-bezier(.2,.6,.3,1) infinite; }
-@keyframes pulse-ring {
-  0%   { transform: scale(1); opacity: .65; }
-  70%  { transform: scale(3.2); opacity: 0; }
-  100% { transform: scale(3.2); opacity: 0; }
-}
-
-a:focus-visible, button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 3px;
+  position: absolute;
+  width: 1px; height: 1px;
+  margin: -1px; padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .skip {
-  position: fixed; top: 10px; left: 10px; z-index: 300;
+  position: fixed;
+  top: 10px; left: 10px;
+  z-index: 200;
+  padding: 10px 16px;
+  background: var(--cyan);
+  color: var(--on-accent);
+  font: 600 13px/1 var(--sans);
+  text-decoration: none;
+  border-radius: 4px;
   transform: translateY(-160%);
-  background: var(--accent); color: var(--on-accent);
-  font-family: var(--cond); font-size: 13px; letter-spacing: .12em;
-  text-transform: uppercase; text-decoration: none; padding: 9px 16px;
-  transition: transform .18s ease;
+  transition: transform .18s var(--ease);
 }
-.skip:focus { transform: translateY(0); }
+.skip:focus { transform: none; }
 
-/* ============================================================= loader == */
-/* THE COVER MUST BE ABLE TO LIFT ITSELF.
- *
- *   This loader trapped the page: it is dismissed by script, and any throw
- *   during start-up left a full-screen cover over a page that was
- *   otherwise fine. The script's own guards cannot help when the failure is
- *   at module top level, or when the bundle fails to parse at all - no
- *   try/catch inside a file can catch that file failing to load.
- *
- *   So the last line of defence is CSS, which cannot be stopped by a
- *   JavaScript error. The loader hides itself after four seconds no matter
- *   what. Script adding .done still hides it immediately on a healthy load,
- *   which is every load where anything works at all. */
-.loader {
-  position: fixed; inset: 0; z-index: 250;
-  display: grid; place-items: center;
-  background: var(--bg);
-  transition: opacity .55s ease, visibility .55s ease;
-  animation: loader-failsafe .45s ease 4s forwards;
+:focus-visible {
+  outline: 2px solid var(--cyan);
+  outline-offset: 3px;
 }
+
+.label {
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------- loader --- */
+
+.loader {
+  position: fixed;
+  inset: 0;
+  z-index: 150;
+  display: grid;
+  place-items: center;
+  background: var(--bg);
+  transition: opacity .55s var(--ease), visibility .55s var(--ease);
+
+  /* FAILSAFE. The one layer that does not depend on script at all: if the
+     bundle throws while parsing, nothing can call dismissLoader(), and
+     without this rule the page is a permanent splash screen. That has
+     actually happened here once. It stays. */
+  animation: loader-failsafe .45s ease 8s forwards;
+}
+.loader.is-gone { opacity: 0; visibility: hidden; pointer-events: none; }
 @keyframes loader-failsafe {
   to { opacity: 0; visibility: hidden; pointer-events: none; }
 }
-.loader.done {
-  opacity: 0; visibility: hidden; pointer-events: none;
-  animation: none;
-}
-.loader-inner { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+
+.loader-inner { text-align: center; }
 .loader-mark {
-  width: 34px; height: 34px; display: grid; place-items: center;
-  background: var(--accent); color: var(--on-accent);
-  font-family: var(--cond); font-weight: 700; font-size: 22px;
+  display: block;
+  width: 84px; height: 84px;
+  margin: 0 auto 16px;
+  border-radius: 12px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .08), 0 8px 34px -8px rgba(255, 168, 38, .6);
 }
 .loader-word {
-  font-family: var(--cond); font-size: 22px; font-weight: 600;
-  letter-spacing: .14em; text-transform: uppercase; color: var(--ink);
+  font: 600 clamp(26px, 5vw, 38px)/1 var(--cond);
+  letter-spacing: .12em;
+  text-transform: uppercase;
 }
-.loader-bar { width: 148px; height: 2px; background: var(--raised); overflow: hidden; }
+.loader-bar {
+  width: 160px; height: 2px;
+  margin: 18px auto 12px;
+  background: rgba(148, 163, 184, .22);
+  overflow: hidden;
+}
 .loader-bar span {
-  display: block; width: 34%; height: 100%; background: var(--accent);
-  animation: sweep 1.05s ease-in-out infinite;
+  display: block;
+  width: 40%; height: 100%;
+  background: var(--cyan);
+  animation: loader-sweep 1.15s ease-in-out infinite;
 }
-@keyframes sweep {
-  0% { transform: translateX(-100%); } 100% { transform: translateX(300%); }
+@keyframes loader-sweep {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(350%); }
 }
-.loader-note { font-size: 9.5px; }
+.loader-note { color: var(--muted); }
 
-/* ======================================================== the scene === */
-/* Fixed, so one camera journey spans the whole page. */
-.pipe-gl {
-  position: fixed; inset: 0; z-index: 0;
-  width: 100vw; height: 100vh;
-  display: block; pointer-events: none;
-}
+/* -------------------------------------------------------------- scene --- */
 
-/* Flat fallback beneath the canvas: three bands that read as a lit pipe, so
-   the page is never an empty black field when WebGL is unavailable. */
-.pipe-flat {
-  position: fixed; left: 0; right: 0; top: 52%; height: 230px;
-  transform: translateY(-50%) rotate(-4deg) scaleX(1.25);
-  z-index: 0; opacity: .45; pointer-events: none;
-}
-.pipe-flat span { position: absolute; left: -6%; right: -6%; display: block; }
-.pipe-flat span:nth-child(1) { top: 0; height: 70px;
-  background: linear-gradient(180deg, #7e877e, #d3d9d0 52%, #949d94); }
-.pipe-flat span:nth-child(2) { top: 70px; height: 86px;
-  background: linear-gradient(180deg, #4a4438, #8a4a1e 58%, #45403a); }
-.pipe-flat span:nth-child(3) { top: 156px; height: 70px;
-  background: linear-gradient(180deg, #9aa49b, #c2c9bf 42%, #6d766e); }
-.gl-on .pipe-flat { display: none; }
-
-/* Keeps type legible over a DAYLIGHT scene.
- *
- * This is the piece that had to change most when the scene went bright. A
- * near-opaque full-screen scrim was hiding the pipeline it was supposed to
- * be sitting over; a bright scene needs the opposite treatment - a panel of
- * shade exactly where the copy is, and clear glass everywhere else.
- *
- * So it is left-weighted: heavy under the column of text, gone by two
- * thirds across, where the corridor and the refinery are. Fixed with the
- * canvas, so the two never slide out of register. */
-.scrim {
-  position: fixed; inset: 0; z-index: 1; pointer-events: none;
-  background:
-    linear-gradient(95deg,
-      rgba(8,11,10,.90) 0%,
-      rgba(8,11,10,.80) 26%,
-      rgba(8,11,10,.42) 48%,
-      rgba(8,11,10,.06) 68%,
-      rgba(8,11,10,0) 82%),
-    linear-gradient(180deg,
-      rgba(8,11,10,.72) 0%,
-      rgba(8,11,10,.10) 18%,
-      rgba(8,11,10,0) 55%,
-      rgba(8,11,10,.55) 92%,
-      rgba(8,11,10,.78) 100%);
+/* R3F puts this class on its wrapper element, not on the canvas itself. */
+.world {
+  position: fixed;
+  inset: 0;
+  z-index: 0;
 }
 
-main { position: relative; z-index: 2; }
+/* The scrollbar needs a reason to exist. Everything visible is fixed, so
+   without a tall element in normal flow there is no scroll and no journey. */
+.scroll-length { width: 100%; }
 
-/* ============================================================= header == */
-header {
-  position: fixed; inset: 0 0 auto 0; z-index: 100;
-  display: flex; align-items: center; gap: clamp(1rem, 3vw, 2.6rem);
-  padding: 18px var(--gutter);
-  border-bottom: 1px solid transparent;
-  transition: background .35s ease, border-color .35s ease, padding .35s ease;
-}
-header.scrolled {
-  background: rgba(13,17,16,.86);
-  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
-  border-bottom-color: var(--line);
-  padding-block: 11px;
-}
-.brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
-.mark {
-  width: 25px; height: 25px; display: grid; place-items: center;
-  background: var(--accent); color: var(--on-accent);
-  font-family: var(--cond); font-weight: 700; font-size: 17px;
-}
-.wordmark {
-  font-family: var(--cond); font-size: 21px; font-weight: 600;
-  letter-spacing: .09em; text-transform: uppercase; color: var(--ink);
-}
-.nav { display: flex; gap: clamp(.9rem, 2vw, 1.9rem); flex: 1; }
-.nav-link {
-  font-family: var(--cond); font-size: 13.5px; font-weight: 500;
-  letter-spacing: .13em; text-transform: uppercase;
-  color: var(--muted); text-decoration: none;
-  padding-block: 4px; border-bottom: 1px solid transparent;
-  transition: color .2s ease, border-color .2s ease;
-}
-.nav-link:hover { color: var(--ink); }
-.nav-link.on { color: var(--accent); border-bottom-color: var(--accent); }
-@media (max-width: 900px) { .nav { display: none; } }
+/* ------------------------------------------------------------ overlay --- */
 
-/* ============================================================ buttons == */
-.btn {
-  display: inline-flex; align-items: center; gap: 9px;
-  height: 44px; padding: 0 22px;
-  background: var(--accent); color: var(--on-accent);
-  border: 1px solid var(--accent);
-  font-family: var(--cond); font-size: 14px; font-weight: 600;
-  letter-spacing: .13em; text-transform: uppercase; text-decoration: none;
-  white-space: nowrap;
-  transition: background .2s ease, border-color .2s ease, transform .2s ease;
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 10;
+  /* Clicks fall through to the scene by default; controls opt back in. */
+  pointer-events: none;
 }
-.btn:hover {
-  background: var(--accent-deep); border-color: var(--accent-deep);
-  transform: translateY(-1px);
-}
-.btn svg { transition: transform .22s ease; }
-.btn:hover svg { transform: translateX(3px); }
-.btn-sm { height: 34px; padding: 0 15px; font-size: 12.5px; }
-.btn-lg { height: 54px; padding: 0 30px; font-size: 16px; }
-.btn-ghost {
-  background: transparent; color: var(--ink); border-color: var(--line);
-}
-.btn-ghost:hover {
-  background: rgba(255,255,255,.04); border-color: var(--muted);
-}
+.overlay a, .overlay button { pointer-events: auto; }
 
-/* =============================================================== hero == */
-section { position: relative; }
-
-#hero {
-  min-height: 100svh;
-  display: flex; flex-direction: column; justify-content: center;
-  padding-top: 120px; padding-bottom: 120px;
+.masthead {
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  display: flex;
+  align-items: center;
+  gap: 18px;
+  padding: clamp(16px, 2.4vw, 28px) var(--gutter);
 }
-.hero-copy { max-width: 900px; }
-
-.eyebrow { display: flex; align-items: center; gap: 10px; margin: 0 0 26px; }
-
-h1 {
-  margin: 0;
-  font-family: var(--cond);
-  font-size: clamp(3.4rem, 10.5vw, 9.5rem);
-  font-weight: 700; line-height: .88; letter-spacing: -.012em;
-  text-transform: uppercase; color: var(--ink);
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  font: 600 17px/1 var(--cond);
+  letter-spacing: .18em;
+  text-decoration: none;
 }
-.h1-sm {
-  display: block; margin-bottom: .18em;
-  font-size: clamp(1rem, 1.7vw, 1.5rem); font-weight: 600;
-  letter-spacing: .34em; color: var(--accent);
+/* The Corvex emblem as an app-icon tile; it carries its own dark backdrop. */
+.brand__logo {
+  width: 30px; height: 30px;
+  border-radius: 6px;
+  object-fit: cover;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, .10), 0 2px 14px -3px rgba(255, 168, 38, .55);
 }
-
-.triad {
-  margin: 30px 0 0;
-  font-family: var(--cond);
-  font-size: clamp(1.3rem, 3vw, 2.3rem);
-  font-weight: 600; letter-spacing: .07em; text-transform: uppercase;
+.masthead__note {
+  margin-left: auto;
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: .1em;
   color: var(--muted);
 }
-.triad span { color: var(--accent); }
 
-.lede {
-  margin: 22px 0 0; max-width: 46ch;
-  font-size: clamp(1rem, 1.35vw, 1.18rem); line-height: 1.7; color: var(--body);
-}
-
-.actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 36px; }
-.actions.center { justify-content: center; }
-
-.cue {
-  position: absolute; left: 50%; bottom: 34px;
-  transform: translateX(-50%);
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  text-decoration: none; padding: 10px 16px;
-}
-.cue .label { font-size: 9.5px; }
-.cue-line {
-  width: 1px; height: 42px;
-  background: linear-gradient(180deg, var(--accent), transparent);
-  transform-origin: top; animation: cue 2.4s ease-in-out infinite;
-}
-@keyframes cue {
-  0%, 100% { transform: scaleY(.3); opacity: .4; }
-  50% { transform: scaleY(1); opacity: 1; }
-}
-@media (max-height: 720px) { .cue { display: none; } }
-
-/* =========================================================== chapters == */
-.chapter {
-  min-height: 100svh;
-  display: flex; align-items: center;
-  padding-block: clamp(5rem, 14vh, 10rem);
-}
-.chapter-copy { max-width: 720px; }
-.chapter-copy.center { max-width: 820px; margin-inline: auto; text-align: center; }
-
-.chapter-num {
-  display: block; margin-bottom: 20px;
-  font-size: 11.5px; letter-spacing: .2em; text-transform: uppercase;
-  color: var(--accent);
-}
-
-h2 {
-  margin: 0 0 26px;
-  font-family: var(--cond);
-  font-size: clamp(2.4rem, 6vw, 5rem);
-  font-weight: 600; line-height: .98; letter-spacing: -.004em;
-  text-transform: uppercase; color: var(--ink);
-}
-h2 em { font-style: normal; color: var(--accent); }
-.h-lead { font-size: clamp(4rem, 12vw, 10rem); line-height: .86; }
-.h-close { font-size: clamp(3rem, 8.5vw, 7rem); line-height: .94; }
-
-p.body {
-  margin: 0 0 18px; max-width: 58ch;
-  font-size: clamp(.98rem, 1.15vw, 1.08rem); color: var(--body);
-}
-.chapter-copy.center p.body { margin-inline: auto; }
-p.foot { margin: 18px 0 0; font-size: 12.5px; color: var(--dim); max-width: 56ch; }
-.chapter-copy.center p.foot { margin-inline: auto; }
-p.rule {
-  margin-top: 26px; padding-left: 16px;
-  border-left: 2px solid var(--accent); color: var(--muted);
-}
-
-/* -------------------------------------------------------- figure rows -- */
-/* Rules, not cards. A row of bordered boxes under a headline is the most
-   template-looking thing a page like this can do. */
-.figures {
-  display: flex; flex-wrap: wrap; margin: 0 0 30px;
-  border-top: 1px solid var(--line); border-bottom: 1px solid var(--line);
-}
-.figures > div {
-  padding: 16px 26px 16px 0; margin-right: 26px;
-  border-right: 1px solid var(--line-soft);
-}
-.figures > div:last-child { border-right: 0; margin-right: 0; padding-right: 0; }
-.figures b {
-  display: block; font-size: clamp(1.6rem, 3.2vw, 2.6rem);
-  font-weight: 500; line-height: 1; color: var(--ink);
-}
-.figures .label { display: block; margin-top: 7px; font-size: 9.5px; }
-.figures.tight { margin-top: 30px; }
-
-.readouts { display: flex; flex-wrap: wrap; gap: 34px; margin: 28px 0 0; }
-.readouts .label { display: block; font-size: 9.5px; margin-bottom: 7px; }
-.readouts b { font-size: clamp(1.4rem, 2.6vw, 2rem); font-weight: 500; color: var(--accent); }
-
-/* ------------------------------------------------------- annotations --- */
-.annots { list-style: none; margin: 26px 0 0; padding: 0; }
-.annots li {
-  display: flex; gap: 16px; align-items: baseline;
-  padding: 9px 0; border-top: 1px solid var(--line-soft);
-}
-.annot-k { width: 118px; flex-shrink: 0; font-size: 9.5px; }
-.annot-v { font-size: 13px; color: var(--muted); }
-
-/* ------------------------------------------------------------- SHAP ---- */
-.shap { margin-top: 30px; }
-.shap-row {
-  display: grid; grid-template-columns: 148px 1fr 54px;
-  align-items: center; gap: 14px; padding: 7px 0;
-}
-.shap-k { font-size: 12.5px; color: var(--muted); }
-.shap-bar {
-  height: 9px; background: var(--raised); position: relative; display: block;
-}
-.shap-bar::after {
-  content: ""; position: absolute; inset: 0 auto 0 0;
-  width: var(--w); background: var(--amber);
-}
-.shap-row.neg .shap-bar::after { background: var(--good); }
-.shap-v { text-align: right; font-size: 11.5px; color: var(--amber); }
-.shap-row.neg .shap-v { color: var(--good); }
-.shap-total {
-  display: flex; align-items: baseline; gap: 14px;
-  margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--line);
-}
-.shap-total b { font-size: 1.5rem; color: var(--ink); }
-@media (max-width: 620px) {
-  .shap-row { grid-template-columns: 110px 1fr 48px; gap: 10px; }
-}
-
-/* ----------------------------------------------------- risk matrix ----- */
-.matrix { margin-top: 30px; max-width: 460px; }
-.matrix-grid {
-  display: grid; grid-template-columns: repeat(5, 1fr); gap: 3px;
-}
-.matrix-grid i {
-  display: block; aspect-ratio: 1 / .62; position: relative;
-}
-.matrix-grid i b {
-  position: absolute; inset: 0; display: grid; place-items: center;
-  font-family: var(--mono); font-size: 10.5px; font-weight: 600;
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 11px 20px;
+  font: 500 13px/1 var(--sans);
+  letter-spacing: .04em;
+  text-decoration: none;
+  border-radius: 3px;
+  background: var(--cyan);
+  /* Dark ink is not a style choice: white on this cyan is 1.77:1. */
   color: var(--on-accent);
+  border: 1px solid var(--cyan);
+  transition: background .18s var(--ease), color .18s var(--ease);
 }
-.matrix-axes {
-  display: flex; justify-content: space-between; align-items: center;
-  margin-top: 10px;
+.cta:hover { background: #4FE3FF; border-color: #4FE3FF; }
+.cta--ghost {
+  background: transparent;
+  color: var(--text);
+  border-color: rgba(148, 163, 184, .4);
 }
-.matrix-axes .label { font-size: 9px; }
-/* The likelihood axis runs up the side of the grid, so its label does too.
-   Rotated on its own element rather than the container, so the words stay
-   upright relative to the axis they name. */
-.matrix-axes .y { writing-mode: vertical-rl; transform: rotate(180deg); }
-@media (max-width: 620px) {
-  .matrix-axes .y { writing-mode: horizontal-tb; transform: none; }
-}
-
-.bands { display: flex; flex-wrap: wrap; gap: 18px; margin-top: 18px; }
-.bands span {
-  display: inline-flex; align-items: center; gap: 7px;
-  font-family: var(--cond); font-size: 11px; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--muted);
-}
-.bands i { width: 10px; height: 10px; display: block; }
-.bands b { color: var(--ink); font-size: 11.5px; }
-
-/* ------------------------------------------------------------- flow ---- */
-.flow { list-style: none; margin: 0 0 26px; padding: 0; }
-.flow li {
-  display: flex; flex-wrap: wrap; align-items: baseline; gap: 16px;
-  padding: 14px 0 14px 22px; position: relative;
-  border-top: 1px solid var(--line-soft);
-}
-.flow li::before {
-  content: ""; position: absolute; left: 0; top: 50%;
-  width: 8px; height: 1px; background: var(--accent);
-}
-.flow b {
-  width: 108px; flex-shrink: 0;
-  font-family: var(--cond); font-size: 17px; font-weight: 600;
-  letter-spacing: .1em; text-transform: uppercase; color: var(--ink);
-}
-.flow span { font-size: 13px; color: var(--muted); }
-
-/* --------------------------------------------------------- assistant -- */
-.convo { margin-top: 30px; border: 1px solid var(--line); background: rgba(21,27,25,.72); }
-.convo .q {
-  margin: 0; padding: 15px 18px;
-  border-bottom: 1px solid var(--line-soft);
-  font-family: var(--cond); font-size: 16px; letter-spacing: .06em;
-  text-transform: uppercase; color: var(--ink);
-}
-.convo .a { padding: 16px 18px; }
-.convo .a p { margin: 0; font-size: 13.5px; line-height: 1.7; color: var(--body); }
-.cites {
-  display: flex; flex-wrap: wrap; align-items: center; gap: 9px;
-  margin-top: 15px; padding-left: 13px; border-left: 2px solid var(--accent);
-}
-.cites .label { font-size: 8.5px; color: var(--accent); }
-.cites b {
-  font-family: var(--mono); font-size: 10.5px; font-weight: 400;
-  color: var(--muted); border: 1px solid var(--line); padding: 3px 7px;
+.cta--ghost:hover {
+  background: rgba(0, 212, 255, .1);
+  border-color: var(--cyan);
 }
 
-/* --------------------------------------------------------- standards -- */
-.standards {
-  list-style: none; margin: 0; padding: 0;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-  gap: 1px; background: var(--line-soft);
-  border: 1px solid var(--line-soft);
-}
-.standards li {
-  background: var(--bg); padding: 18px 16px;
-  font-family: var(--mono); font-size: 13px; color: var(--muted);
-  transition: color .2s ease, background .2s ease;
-}
-.standards li:hover { color: var(--accent); background: var(--panel); }
+/* --------------------------------------------------------------- rail --- */
 
-/* ============================================================= footer == */
-footer {
-  position: relative; z-index: 2;
-  border-top: 1px solid var(--line);
-  background: var(--bg);
-  padding-block: 44px 30px;
+.rail {
+  position: absolute;
+  top: 50%;
+  left: var(--gutter);
+  transform: translateY(-50%);
+  display: flex;
+  gap: 14px;
 }
-.footer-grid {
-  display: flex; flex-wrap: wrap; gap: 34px; align-items: flex-start;
+.rail__track {
+  position: relative;
+  width: 2px;
+  background: rgba(148, 163, 184, .2);
 }
-.footer-grid > div { flex: 1; min-width: 220px; }
-.footer-grid .label { margin: 12px 0 0; font-size: 9.5px; line-height: 1.8; }
-.footer-grid nav { display: flex; flex-direction: column; gap: 9px; }
-.footer-grid nav a {
-  font-family: var(--cond); font-size: 13px; letter-spacing: .12em;
-  text-transform: uppercase; color: var(--muted); text-decoration: none;
+.rail__fill {
+  position: absolute;
+  inset: 0;
+  background: var(--cyan);
+  transform-origin: top;
+  transform: scaleY(0);
 }
-.footer-grid nav a:hover { color: var(--accent); }
-.copyright { width: 100%; font-size: 11px; color: var(--dim); margin: 0; }
+.rail__list {
+  margin: 0; padding: 0;
+  list-style: none;
+  display: grid;
+  gap: clamp(8px, 1.6vh, 18px);
+}
+.rail__item {
+  display: flex;
+  align-items: baseline;
+  gap: 9px;
+  color: var(--muted);
+  opacity: .5;
+  transition: opacity .3s var(--ease), color .3s var(--ease);
+}
+.rail__item.is-past { opacity: .75; }
+.rail__item.is-active { opacity: 1; color: var(--text); }
+.rail__num {
+  font: 500 10px/1 var(--mono);
+  letter-spacing: .1em;
+  color: var(--cyan);
+}
+.rail__title {
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+}
 
-/* ================================================= no-js and fallbacks == */
-/* If the bundle never runs, nothing may be stuck invisible and nothing may
-   be left covering the page. */
-.no-js .loader { display: none; }
-.no-js .pipe-gl { display: none; }
-.no-js .chapter-copy, .no-js .hero-copy { opacity: 1 !important; transform: none !important; }
+/* -------------------------------------------------------------- panel --- */
 
-/* ===================================================== reduced motion == */
+.panel {
+  position: absolute;
+  right: var(--gutter);
+  top: 50%;
+  width: min(480px, 42vw);
+  transform: translateY(-46%) translateX(24px);
+  opacity: 0;
+  visibility: hidden;
+  transition:
+    opacity .5s var(--ease),
+    transform .6s var(--ease),
+    visibility .5s var(--ease);
+}
+.panel.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Full logo on the opening panel. The image file carries real transparency
+   (its near-black backdrop was converted to alpha), so it sits on the scene
+   with no rectangle. Blend modes cannot do this job here: the panel animates
+   opacity and transform, which isolates it from the canvas behind. */
+.panel__logo {
+  display: block;
+  width: clamp(220px, 24vw, 340px);
+  height: auto;
+  margin: 0 0 18px -6px;
+}
+.plain__logo {
+  display: block;
+  width: min(320px, 70vw);
+  height: auto;
+  margin: 0 0 18px;
+}
+.panel__eyebrow {
+  margin: 0 0 14px;
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.panel__headline {
+  margin: 0 0 16px;
+  font: 600 clamp(30px, 4.4vw, 54px)/1.03 var(--cond);
+  letter-spacing: -.01em;
+  text-wrap: balance;
+}
+.panel__body {
+  margin: 0 0 18px;
+  max-width: 44ch;
+  font-size: clamp(14px, 1.15vw, 16px);
+  line-height: 1.62;
+  /* 12.0:1 on --bg — a notch under full white, so the headline still leads */
+  color: #C3CEDC;
+}
+.panel__foot {
+  margin: 14px 0 0;
+  max-width: 46ch;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--muted);
+}
+.panel__actions {
+  margin-top: 26px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+/* ------------------------------------------------------------ figures --- */
+
+.figures {
+  margin: 22px 0 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(108px, 1fr));
+  gap: 18px 22px;
+}
+.figure { margin: 0; }
+.figure__v {
+  margin: 0;
+  font: 500 clamp(22px, 2.6vw, 32px)/1 var(--cond);
+  color: var(--cyan);
+  /* Tabular figures, so a counting number does not shift its own box. */
+  font-variant-numeric: tabular-nums;
+}
+.figure__k {
+  margin: 6px 0 0;
+  font: 500 10px/1.3 var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.count { font-variant-numeric: tabular-nums; }
+
+/* ---------------------------------------------------------------- hud --- */
+
+.hud {
+  position: absolute;
+  right: var(--gutter);
+  bottom: clamp(16px, 2.4vw, 28px);
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.hud__pct { font-variant-numeric: tabular-nums; color: var(--cyan); }
+.hud__hint::after {
+  content: "";
+  display: inline-block;
+  width: 26px; height: 1px;
+  margin-left: 9px;
+  vertical-align: middle;
+  background: currentColor;
+  animation: hud-cue 1.9s ease-in-out infinite;
+}
+@keyframes hud-cue {
+  0%, 100% { opacity: .3; transform: translateX(0); }
+  50%      { opacity: 1;  transform: translateX(5px); }
+}
+
+/* ---------------------------------------- in-scene labels (drei Html) --- */
+
+.tag {
+  display: grid;
+  gap: 2px;
+  padding: 6px 10px;
+  white-space: nowrap;
+  /* Opaque enough to read without a backdrop blur. A blur over the canvas
+     has to be recomputed every frame the scene moves behind it, which on an
+     integrated GPU was a visible share of the scroll budget. */
+  background: rgba(13, 17, 23, .93);
+  border-left: 2px solid var(--cyan);
+}
+.tag--pin { transform: translate(14px, -50%); }
+.tag__k {
+  font: 500 11px/1.2 var(--mono);
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.tag__v {
+  font: 300 11px/1.2 var(--sans);
+  color: var(--muted);
+}
+.tag--shap.is-up {
+  border-left-color: var(--critical);
+  transform: translate(-100%, -50%);
+}
+.tag--shap.is-down {
+  border-left-color: var(--cyan);
+  transform: translate(0, -50%);
+}
+
+.axis {
+  font: 500 12px/1 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--muted);
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+.axis--y { transform: translate(-50%, -50%) rotate(-90deg); }
+
+.legend {
+  display: flex;
+  gap: 16px;
+  white-space: nowrap;
+  transform: translate(-50%, -50%);
+}
+.legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 500 11px/1 var(--mono);
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: var(--text);
+}
+.legend__item i {
+  width: 10px; height: 10px;
+  border-radius: 2px;
+}
+
+/* -------------------------------------------------------------- plain --- */
+
+/* The no-WebGL / no-script / scene-threw fallback. Hidden unless one of
+   those is actually the case — see the comment in index.html for why this
+   is a div and not a noscript block. */
+.plain { display: none; }
+.no-js .plain,
+.scene-failed .plain {
+  display: block;
+  position: relative;
+  z-index: 120;
+  max-width: 62ch;
+  margin: 0 auto;
+  padding: clamp(40px, 8vh, 90px) var(--gutter);
+}
+.no-js .loader,
+.scene-failed .loader,
+.no-js .world,
+.scene-failed .world { display: none; }
+
+.plain h1 {
+  margin: 0 0 18px;
+  font: 600 clamp(30px, 6vw, 46px)/1.05 var(--cond);
+}
+.plain__lede {
+  margin: 0 0 30px;
+  font-size: 17px;
+  line-height: 1.6;
+  color: #C3CEDC;
+}
+.plain dl { margin: 0 0 30px; }
+.plain dt {
+  margin-top: 20px;
+  font: 500 11px/1.4 var(--mono);
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.plain dd {
+  margin: 6px 0 0;
+  line-height: 1.62;
+  color: #C3CEDC;
+}
+
+/* --------------------------------------------------------- responsive --- */
+
+@media (max-width: 880px) {
+  .rail__list { display: none; }
+  .rail { left: 14px; }
+  .rail__track { width: 2px; height: 40vh; }
+
+  .panel {
+    right: var(--gutter);
+    left: var(--gutter);
+    top: auto;
+    bottom: clamp(60px, 12vh, 110px);
+    width: auto;
+    transform: translateY(18px);
+  }
+  .panel.is-on { transform: none; }
+  .panel__body { max-width: none; }
+
+  .masthead__note { display: none; }
+}
+
+@media (max-width: 560px) {
+  .masthead .cta { padding: 9px 14px; font-size: 12px; }
+  .figures { grid-template-columns: repeat(2, 1fr); }
+}
+
+/* ----------------------------------------------------- reduced motion --- */
+
+/* The journey itself still runs: it is scroll-driven, and removing it would
+   remove the content. What goes is the easing and the idle animation. */
 @media (prefers-reduced-motion: reduce) {
-  html { scroll-behavior: auto; }
   *, *::before, *::after {
-    animation-duration: .001ms !important;
+    animation-duration: .01ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: .001ms !important;
+    transition-duration: .01ms !important;
   }
-  /* Shortening a LOOP turns it into a flicker, which is worse than the
-     animation. These stop outright. */
-  .cue-line, .loader-bar span, .pulse i { animation: none !important; }
-  .chapter-copy, .hero-copy { opacity: 1 !important; transform: none !important; }
+  /* Except the failsafe, which is the only thing standing between a broken
+     bundle and a permanent splash screen. */
+  .loader { animation: loader-failsafe .01ms ease 4s forwards !important; }
 }
 
-/* ========================================================== responsive == */
-@media (max-width: 760px) {
-  .scrim {
-    background:
-      linear-gradient(180deg, rgba(8,11,10,.84) 0%, rgba(8,11,10,.62) 28%,
-                     rgba(8,11,10,.62) 72%, rgba(8,11,10,.90) 100%);
-  }
-  .chapter { min-height: auto; padding-block: 5rem; }
-  .figures > div { padding-right: 16px; margin-right: 16px; }
+/* When the scene cannot run, the overlay has nothing to sit on top of and
+   would cover the plain copy with a fixed, half-empty HUD. */
+.no-js .overlay,
+.scene-failed .overlay,
+.no-js .scroll-length,
+.scene-failed .scroll-length { display: none; }
+
+/* Layer labels on the exploded twin sit to the LEFT of the pipe, so they
+   are anchored by their right edge and grow away from it. */
+.tag--left {
+  transform: translate(-100%, -50%);
+  border-left: 0;
+  border-right: 2px solid var(--cyan);
+  text-align: right;
 }

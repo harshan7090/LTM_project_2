@@ -280,8 +280,9 @@ export default function Maintenance({ onOpenSegment }: { onOpenSegment: (id: str
                         <span className="flex items-baseline gap-2 text-[12px]">
                           <span className="num text-[10px] text-dim">{t.tech_id}</span>
                           {t.name}
+                          {t.depot && <span className="text-dim"> · {t.depot}</span>}
                           <span className="label text-dim" style={{ fontSize: 8.5 }}>
-                            {t.skills.filter((s) => s !== 'general').join(' · ')}
+                            {t.skills.filter((s) => s !== 'general').map((s) => s.replace(/_/g, ' ')).join(' · ')}
                           </span>
                         </span>
                         <span className="num text-[11px] text-muted">
@@ -319,7 +320,11 @@ export default function Maintenance({ onOpenSegment }: { onOpenSegment: (id: str
             return (
               <Module
                 key={techId}
-                title={tech?.name ?? techId}
+                title={`Assigned to · ${tech?.name ?? techId} crew`}
+                sub={[
+                  tech?.depot ? `Based at ${tech.depot} depot` : null,
+                  tech?.skills.filter((s) => s !== 'general').map((s) => s.replace(/_/g, ' ')).join(' · '),
+                ].filter(Boolean).join(' · ')}
                 id={techId}
                 bodyClass=""
                 right={

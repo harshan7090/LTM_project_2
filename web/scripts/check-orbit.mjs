@@ -2,7 +2,9 @@
  * poles the up vector and the view direction become parallel and the cross
  * product collapses to zero - the render would go blank or invert with no
  * error anywhere. EL_LIMIT exists to prevent that; this proves it does. */
-const EL_LIMIT = 1.25, DIST_MIN = 3.4, DIST_MAX = 9.0;
+const EL_LIMIT = 1.25, DIST_MIN = 4.2, DIST_MAX = 13.0;   // as in Pipeline3D.tsx
+// The eye orbits TARGET; the basis depends only on the direction eye - target,
+// so orbiting the origin tests exactly the same set of bases.
 
 function lookAt(eye, at, up) {
   let zx = eye[0]-at[0], zy = eye[1]-at[1], zz = eye[2]-at[2];
@@ -18,7 +20,7 @@ const len = (a) => Math.hypot(...a);
 let bad = 0, worstDeg = 0, worstUnit = 0, minCross = Infinity;
 for (let ai = 0; ai < 48; ai++) {
   for (let ei = -24; ei <= 24; ei++) {
-    for (const dist of [DIST_MIN, 5.4, DIST_MAX]) {
+    for (const dist of [DIST_MIN, 8.6, DIST_MAX]) {
       const az = (ai/48)*Math.PI*2;
       const el = (ei/24)*EL_LIMIT;              // full reachable range
       const ce = Math.cos(el);

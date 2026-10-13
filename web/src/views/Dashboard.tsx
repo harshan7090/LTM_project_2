@@ -28,9 +28,12 @@ import { Search, X } from 'lucide-react';
 
 import { api } from '../lib/api';
 import type { Me, RiskBand, Segment } from '../lib/types';
-import { EmptyState, Module, RiskBadge, Sweep, cx, fmt } from '../components/ui';
+import {
+  EmptyState, Module, RATE_BG, RiskBadge, Sweep, cx, fmt, rateCategoryOf,
+} from '../components/ui';
 import { BAND_COLOR, RiskMatrix, Sparkline, toBand } from '../components/fleet';
 import { PipelineMap } from '../components/PipelineMap';
+import type { GeoBox } from '../components/PipelineMap';
 import SegmentDrawer from '../components/SegmentDrawer';
 
 const BANDS: (RiskBand | 'all')[] = ['all', 'critical', 'elevated', 'normal'];
@@ -179,17 +182,16 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
       header: 'Rate mpy',
       cell: (i) => {
         const v = i.getValue<number>();
-        const b = i.row.original.risk_band;
+        // Coloured by the RATE's own severity (NACE SP0775), not by risk:
+        // the risk has its own column, and a fast rate drawn green because
+        // the place is low-consequence read as "this rate is fine".
+        const cat = rateCategoryOf(v, i.row.original.rate_category);
         return (
           <div className="flex items-center gap-2">
             <span className="num w-[42px] text-right">{fmt.rate(v)}</span>
-            <span className="relative h-[3px] w-[52px] bg-raised">
+            <span className="relative h-[3px] w-[52px] bg-raised" title={`${cat} corrosion rate`}>
               <span
-                className={cx(
-                  'absolute inset-y-0 left-0',
-                  b === 'critical' ? 'bg-critical'
-                    : b === 'elevated' ? 'bg-elevated' : 'bg-normal',
-                )}
+                className={cx('absolute inset-y-0 left-0', RATE_BG[cat])}
                 style={{ width: `${Math.max((v / peakRate) * 100, 2)}%` }}
               />
             </span>
@@ -292,6 +294,37 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
 
   const hcaCount = segments.filter((s) => s.is_hca).length;
 
+  /* Where the map opens. Only a zone-scoped user gets a focus: a
+     supervisor's scope IS the country. Built from the full scoped list, never
+     the filtered rows, so it is fixed for the session and the map does not
+     jump as filters change. */
+  const focus = useMemo<GeoBox | null>(() => {
+    if (!me.region || !segments.length) return null;
+    let latMin = 90, latMax = -90, lonMin = 180, lonMax = -180;
+    for (const s of segments) {
+      if (s.latitude == null || s.longitude == null) continue;
+      latMin = Math.min(latMin, s.latitude); latMax = Math.max(latMax, s.latitude);
+      lonMin = Math.min(lonMin, s.longitude); lonMax = Math.max(lonMax, s.longitude);
+    }
+    return latMin <= latMax ? { latMin, latMax, lonMin, lonMax } : null;
+  }, [me.region, segments]);
+
+  /* Bring the detail pane into view when a segment is picked. Picking from
+     the map or the matrix happens a screen above where the pane opens, so
+     without this the click looks like it did nothing. 'nearest' means a pane
+     that is already visible does not move. */
+  const detailGridRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!selected) return;
+    const id = window.requestAnimationFrame(() => {
+      const pane = detailGridRef.current?.lastElementChild;
+      if (!pane || pane === detailGridRef.current?.firstElementChild) return;
+      const reduce = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+      pane.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', block: 'nearest' });
+    });
+    return () => window.cancelAnimationFrame(id);
+  }, [selected]);
+
   /* Everything in the metric strip is derived from `segments`, which is
      already loaded for the register. No extra request, and nothing shown
      that the fleet data does not actually support. */
@@ -313,23 +346,31 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
           Typography and rules, not cards. A row of bordered boxes with a
           number in each is the single most template-looking thing a console
           can do, and it costs vertical space the map wants. */}
-      <div className="flex flex-wrap items-stretch border border-line-soft bg-panel">
-        <Metric label="Fleet" value={segments.length.toLocaleString()} unit="segments" />
+      <div className="metric-strip flex flex-wrap items-stretch border border-line-soft bg-panel">
+        <Metric label="Fleet" value={segments.length.toLocaleString()}
+                unit={`seg · ${routes.length} corridors`} />
         <Metric
           label="In HCA" value={hcaCount.toLocaleString()}
-          unit={`${((hcaCount / (segments.length || 1)) * 100).toFixed(1)}%`}
-          tone="amber"
+          unit={pct(hcaCount, segments.length)}
+          tone="amber" share={hcaCount / (segments.length || 1)}
         />
         <Metric label="Critical" value={metrics.critical.toLocaleString()}
-                unit="segments" tone="critical" />
+                unit={pct(metrics.critical, segments.length)} tone="critical"
+                share={metrics.critical / (segments.length || 1)} />
         <Metric label="Elevated" value={metrics.elevated.toLocaleString()}
-                unit="segments" tone="elevated" />
+                unit={pct(metrics.elevated, segments.length)} tone="elevated"
+                share={metrics.elevated / (segments.length || 1)} />
         <Metric label="Mean rate" value={metrics.meanRate.toFixed(2)} unit="mpy" />
+
+        <RiskMix critical={metrics.critical} elevated={metrics.elevated}
+                 normal={metrics.normal} />
+
         <div className="flex-1" />
-        <div className="flex items-center gap-2 px-4 py-2.5">
+        <div className="flex items-center gap-2.5 px-4 py-2.5">
           <span className="label" style={{ fontSize: 8.5 }}>Scope</span>
-          <span className="num text-[11.5px] text-secondary">
-            {me.region ?? 'All zones'}
+          <span className="flex items-center gap-1.5 border border-line-soft bg-bg px-2 py-[3px]">
+            <span className="lamp lamp-normal" style={{ width: 6, height: 6 }} />
+            <span className="num text-[11.5px] text-ink">{me.region ?? 'All zones'}</span>
           </span>
         </div>
       </div>
@@ -352,7 +393,7 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
           {isLoading
             ? <div className="p-4"><Sweep label="Locating segments…" /></div>
             : <PipelineMap segments={segments} routes={routes} config={mapCfg}
-                           selected={selected} onPick={setSelected} />}
+                           selected={selected} onPick={setSelected} focus={focus} />}
         </Module>
 
         <Module title="Risk Matrix" num="02"
@@ -368,7 +409,7 @@ export default function Dashboard({ me, onAskAssistant }: Props) {
       </div>
 
       {/* ---- which one, and why ------------------------------------------ */}
-      <div className={cx(
+      <div ref={detailGridRef} className={cx(
         'grid gap-3',
         selected
           ? '[grid-template-columns:1fr] xl:[grid-template-columns:minmax(0,1fr)_minmax(430px,480px)]'
@@ -578,10 +619,13 @@ function usePrefetchHistory(ids: string[]) {
     if (!missing.length) return;
     missing.forEach((id) => historyPending.add(id));
 
-    let cancelled = false;
+    /* No "cancelled" guard. There used to be one, and it was the bug that
+       left the top rows' sparklines grey for good: the visible set always
+       changes once as the table measures itself, which cancelled the first
+       batch, and its ids stayed pending so nothing ever asked again. The
+       cache is module-level, so a late answer is still the right answer. */
     api.bulkHistory(missing)
       .then((res) => {
-        if (cancelled) return;
         for (const [id, series] of Object.entries(res.series)) {
           historyCache.set(id, series);
         }
@@ -595,8 +639,6 @@ function usePrefetchHistory(ids: string[]) {
         // lets the next scroll retry them.
       })
       .finally(() => { missing.forEach((id) => historyPending.delete(id)); });
-
-    return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [key]);
 }
@@ -625,19 +667,26 @@ function TrendCell({ segmentId, band }: { segmentId: string; band: RiskBand }) {
  *  still reads as one instrument, which is what a control panel does and a
  *  grid of cards does not. */
 function Metric({
-  label, value, unit, tone,
+  label, value, unit, tone, share,
 }: {
   label: string;
   value: string;
   unit?: string;
   tone?: 'critical' | 'elevated' | 'amber';
+  /** Fraction of the fleet, drawn as a hairline meter under the figure. A
+   *  share is easier to compare as a length than as a percentage. */
+  share?: number;
 }) {
   const color =
     tone === 'critical' ? 'text-critical'
       : tone === 'elevated' ? 'text-elevated'
         : tone === 'amber' ? 'text-amber' : 'text-ink';
+  const fill =
+    tone === 'critical' ? 'bg-critical'
+      : tone === 'elevated' ? 'bg-elevated'
+        : tone === 'amber' ? 'bg-amber' : 'bg-accent';
   return (
-    <div className="border-r border-line-soft px-4 py-2 first:pl-4">
+    <div className="metric relative border-r border-line-soft px-4 pb-2.5 pt-2 first:pl-4">
       <div className="label" style={{ fontSize: 8.5 }}>{label}</div>
       <div className="mt-1 flex items-baseline gap-1.5">
         <span className={cx('num text-[19px] font-medium leading-none', color)}>
@@ -645,6 +694,53 @@ function Metric({
         </span>
         {unit && <span className="num text-[10px] text-dim">{unit}</span>}
       </div>
+      {share !== undefined && (
+        <div className="mt-2 h-[2px] w-full min-w-[84px] bg-raised" aria-hidden>
+          <div className={cx('h-full transition-[width] duration-500', fill)}
+               style={{ width: `${Math.max(Math.min(share, 1) * 100, 1.5)}%` }} />
+        </div>
+      )}
     </div>
   );
+}
+
+/** The fleet's risk split as one stacked bar.
+ *
+ *  Three separate numbers make the reader do the division; one bar shows the
+ *  SHAPE of the exposure at a glance, which is the thing the strip is for. */
+function RiskMix({ critical, elevated, normal }: {
+  critical: number; elevated: number; normal: number;
+}) {
+  const total = critical + elevated + normal || 1;
+  const parts: [string, number, string][] = [
+    ['Critical', critical, 'bg-critical'],
+    ['Elevated', elevated, 'bg-elevated'],
+    ['Normal', normal, 'bg-normal'],
+  ];
+  return (
+    <div className="metric hidden min-w-[220px] flex-col justify-center border-r
+                    border-line-soft px-4 py-2 xl:flex">
+      <div className="label" style={{ fontSize: 8.5 }}>Risk mix</div>
+      <div className="mt-1.5 flex h-[7px] w-full overflow-hidden bg-raised"
+           role="img"
+           aria-label={parts.map(([k, v]) => `${k} ${v}`).join(', ')}>
+        {parts.map(([k, v, bg]) => (
+          <div key={k} className={cx('h-full transition-[width] duration-500', bg)}
+               style={{ width: `${(v / total) * 100}%` }} title={`${k}: ${v}`} />
+        ))}
+      </div>
+      <div className="mt-1.5 flex items-center gap-3">
+        {parts.map(([k, v, bg]) => (
+          <span key={k} className="flex items-center gap-1">
+            <span className={cx('inline-block h-[6px] w-[6px]', bg)} />
+            <span className="num text-[10px] text-muted">{v.toLocaleString()}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function pct(n: number, of: number): string {
+  return `${((n / (of || 1)) * 100).toFixed(1)}%`;
 }

@@ -1,90 +1,124 @@
 /* Landing page consistency check.
  *
  * The recurring failure on this page has been a reference to markup that is
- * not there, or a rule for markup that was deleted. Both fail silently.
- * This checks the markup, the stylesheet and the bundle's source agree.
+ * not there, or a rule for markup that was deleted. Both fail silently: the
+ * page renders, nothing throws, and a panel is simply unstyled or a rule is
+ * simply dead. The last rebuild left a `.lamp` block behind after the
+ * element became `.pulse`, and nothing noticed until this script did.
+ *
+ * So this reads every class the page can produce — from index.html and from
+ * the React sources, including the ones assembled inside template literals —
+ * and every class app.css has a rule for, and reports both directions.
  */
 import fs from 'node:fs';
+import path from 'node:path';
 
 const html = fs.readFileSync('landing/index.html', 'utf8');
 const css = fs.readFileSync('landing/app.css', 'utf8');
-const ts = fs.readFileSync('web/landing-src/main.ts', 'utf8')
-          + fs.readFileSync('web/landing-src/scene.ts', 'utf8');
 
-const htmlIds = new Set([...html.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]));
-const htmlClasses = new Set(
-  [...html.matchAll(/\bclass="([^"]+)"/g)].flatMap((m) => m[1].split(/\s+/)).filter(Boolean),
+const SRC = 'web/landing-src';
+const sources = [];
+(function walk(dir) {
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) walk(p);
+    else if (/\.tsx?$/.test(e.name)) sources.push(fs.readFileSync(p, 'utf8'));
+  }
+})(SRC);
+const ts = sources.join('\n');
+
+/* ------------------------------------------------------------- used ----- */
+
+const used = new Set();
+const add = (s) => s.split(/\s+/)
+  // A trailing -- or __ is the left half of an interpolated name
+  // (`panel--${id}`), not a class the stylesheet is expected to know.
+  .filter((c) => c && !/(--|__)$/.test(c))
+  .forEach((c) => used.add(c));
+
+for (const m of html.matchAll(/\bclass="([^"]+)"/g)) add(m[1]);
+// className="a b"
+for (const m of ts.matchAll(/className="([^"]+)"/g)) add(m[1]);
+// className={`a b${x ? ' c' : ''}`} — every static run inside the template,
+// which is where conditional state classes like ' is-on' live.
+for (const m of ts.matchAll(/className=\{`([^`]*)`\}/g)) {
+  for (const chunk of m[1].split(/\$\{[^}]*\}/)) add(chunk);
+}
+// State classes added conditionally inside a template expression, e.g.
+// ${on ? ' is-on' : ''}. Narrow on purpose: a looser version of this read
+// unit strings like 'mm' and element ids like 'root' as class names.
+for (const m of ts.matchAll(/'\s*((?:is|has)-[a-z0-9-]+)\s*'/g)) used.add(m[1]);
+for (const m of ts.matchAll(/classList\.(?:add|remove|toggle)\('([^']+)'\)/g)) add(m[1]);
+
+/* Set on <html>, never written as a className literal. Both have rules,
+ * so both belong in the comparison. */
+used.add('no-js');        // index.html, removed by main.tsx on boot
+used.add('scene-failed'); // main.tsx, when the scene throws on start
+
+/* -------------------------------------------------------------- css ----- */
+
+/* Class selectors, read with comments stripped first. Without that, the
+   header comment naming palette.ts and index.html registers phantom .ts
+   and .html selectors and every run reports them as orphan rules. */
+const cssRules = css.replace(/\/\*[\s\S]*?\*\//g, '');
+const declared = new Set(
+  [...cssRules.matchAll(/\.([a-zA-Z][\w-]*)/g)].map((m) => m[1]),
 );
-// Classes the script creates at runtime. Both spellings: classList.add,
-// and className assignment on an element built with createElement - missing
-// the second reported every odometer class as an orphaned CSS rule.
-for (const c of [...ts.matchAll(/classList\.(?:add|toggle|remove)\('([^']+)'/g)]) {
-  htmlClasses.add(c[1]);
-}
-for (const c of [...ts.matchAll(/\.className\s*=\s*'([^']+)'/g)]) {
-  c[1].split(/\s+/).filter(Boolean).forEach((x) => htmlClasses.add(x));
-}
-for (const c of ['on', 'done', 'scrolled', 'gl-on', 'no-js', 'neg', 'center', 'tight']) {
-  htmlClasses.add(c);
+
+/* --------------------------------------------------------- compare ----- */
+
+const problems = [];
+
+const orphans = [...declared].filter((c) => !used.has(c)).sort();
+if (orphans.length) {
+  problems.push(`app.css styles ${orphans.length} class(es) nothing produces:\n    ` + orphans.join(', '));
 }
 
-let bad = 0;
-const fail = (m) => { bad++; console.log('  FAIL ' + m); };
-const ok = (m) => console.log('  ok   ' + m);
-
-// --- 1. every getElementById target exists ------------------------------
-console.log('script -> markup:');
-for (const m of ts.matchAll(/getElementById\('([^']+)'\)/g)) {
-  htmlIds.has(m[1]) ? ok(`#${m[1]}`) : fail(`#${m[1]} referenced but not in markup`);
-}
-for (const m of ts.matchAll(/toArray<[^>]+>\('([^']+)'\)/g)) {
-  const sel = m[1];
-  const parts = sel.split(',').map((s) => s.trim());
-  const missing = parts.filter((p) => {
-    const cls = [...p.matchAll(/\.([a-zA-Z0-9_-]+)/g)].map((x) => x[1]);
-    return cls.some((c) => !htmlClasses.has(c));
-  });
-  missing.length ? fail(`${sel} -> ${missing}`) : ok(sel);
+const missing = [...used].filter((c) => !declared.has(c)).sort();
+if (missing.length) {
+  problems.push(`${missing.length} class(es) are produced but have no rule:\n    ` + missing.join(', '));
 }
 
-// --- 2. no CSS rule for markup that does not exist ----------------------
-const cssNo = css.replace(/\/\*[\s\S]*?\*\//g, '');
-const cssClasses = new Set();
-for (const m of cssNo.matchAll(/(^|[\s,>+~({])\.([a-zA-Z][a-zA-Z0-9_-]*)/g)) {
-  cssClasses.add(m[2]);
+/* The loader failsafe is the single most load-bearing rule on the page:
+   without it a throw at module scope leaves a permanent splash screen,
+   which has actually shipped here once. */
+if (!/animation:\s*loader-failsafe/.test(css)) {
+  problems.push('app.css has lost the loader-failsafe animation — a parse error in the bundle would trap the page behind the loader');
 }
-const orphan = [...cssClasses].filter((c) => !htmlClasses.has(c)).sort();
-console.log('\nCSS rules with no markup:');
-orphan.length ? fail('ORPHANED -> ' + orphan.join(', ')) : ok('none');
-
-// --- 3. markup classes with no CSS --------------------------------------
-const unstyled = [...htmlClasses].filter((c) => !cssClasses.has(c)).sort();
-console.log('\nmarkup classes with no CSS rule:');
-console.log('  ' + (unstyled.length ? unstyled.join(', ') : 'none'));
-
-// --- 4. every referenced file exists ------------------------------------
-console.log('\nreferenced files:');
-for (const m of html.matchAll(/(?:src|href)="(\/landing\/[^"]+)"/g)) {
-  const p = m[1].replace(/^\//, '');
-  fs.existsSync(p) ? ok(m[1]) : fail(`${m[1]} MISSING`);
+if (!/@keyframes loader-failsafe/.test(css)) {
+  problems.push('app.css references loader-failsafe but does not define it');
 }
 
-// --- 5. nav + footer anchors resolve to real sections -------------------
-console.log('\nin-page anchors:');
-for (const m of html.matchAll(/href="#([a-zA-Z][\w-]*)"/g)) {
-  htmlIds.has(m[1]) ? ok(`#${m[1]}`) : fail(`#${m[1]} has no target`);
+/* The fallback copy must be reachable both ways: no script at all, and
+   script that loaded but threw. */
+for (const sel of ['.no-js .plain', '.scene-failed .plain']) {
+  if (!css.includes(sel)) problems.push(`app.css is missing "${sel}" — a failure mode with no readable page`);
+}
+if (!/scene-failed/.test(ts)) {
+  problems.push('nothing adds the scene-failed class, so the fallback copy can never appear');
 }
 
-// --- 6. the CTA must reach the console ----------------------------------
-const consoleLinks = [...html.matchAll(/href="\/console"/g)].length;
-console.log('\nLaunch console links: ' + consoleLinks);
-if (consoleLinks < 2) fail('expected the CTA in the header AND the closing section');
-else ok('present in header, hero and close');
+/* The canvas must be positioned by an inline style, not by app.css.
+ *
+ * R3F writes `position: relative; width: 100%; height: 100%` inline on its
+ * wrapper, and inline beats a class rule. With only the stylesheet, the
+ * wrapper stays `relative` inside #root — a flow div with auto height — so
+ * `height: 100%` resolves against an indefinite parent, computes to zero,
+ * and the whole scene renders into a 0px box. Nothing throws; the page is
+ * simply black. This shipped once and is invisible to every other check
+ * here, all of which only read geometry and class names. */
+const worldSrc = fs.readFileSync(`${SRC}/World.tsx`, 'utf8');
+const canvasTag = /<Canvas[\s\S]*?>/.exec(worldSrc)?.[0] ?? '';
+if (!/style=\{\{[^}]*position:\s*'fixed'/.test(canvasTag)) {
+  problems.push("World.tsx: <Canvas> has no inline style with position 'fixed' — R3F's own inline height:100% will collapse the canvas to 0px inside #root");
+}
 
-// --- 7. no inline script (the CSP would kill it) ------------------------
-const inline = (html.match(/<script(?![^>]*\ssrc=)/g) || []).length;
-console.log('\ninline <script> blocks: ' + inline);
-inline === 0 ? ok('none — CSP safe') : fail('inline script will be blocked by script-src self');
+/* The mount point the bundle needs. */
+if (!/id="root"/.test(html)) problems.push('index.html has no #root for the bundle to mount into');
+if (!/landing\/bundle\.js/.test(html)) problems.push('index.html does not load the bundle');
 
-console.log(bad ? `\n${bad} PROBLEM(S)` : '\nLANDING CONSISTENT');
-process.exit(bad ? 1 : 0);
+if (problems.length) {
+  console.error('check-landing: ' + problems.length + ' problem(s)\n  - ' + problems.join('\n  - '));
+  process.exit(1);
+}
+console.log(`check-landing: ${declared.size} CSS classes, ${used.size} produced, all accounted for.`);

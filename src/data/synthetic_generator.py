@@ -15,8 +15,123 @@ import pandas as pd
 from config.settings import settings
 from src.data.data_quality import inject_data_quality_issues
 from src.integrity.geo import generate_region_coordinates
+from src.integrity.remaining_life import (
+    SMYS_PSI, design_factor, min_required_wall_in,
+)
 
 RNG = np.random.default_rng(settings.RANDOM_SEED)
+
+# A SEPARATE stream for pipe design (grade, wall) and wall history. Drawing
+# these from RNG would shift every draw after them, and with it every other
+# column and the corrosion label. On its own stream, making the walls
+# realistic changes the walls and nothing else. Same technique as the map
+# coordinates in src/integrity/geo.py.
+DESIGN_RNG = np.random.default_rng(settings.RANDOM_SEED + 51_831)
+
+# --- Pipe design ------------------------------------------------------------
+# Standard API 5L / ASME B36.10 nominal wall thicknesses, inches. A designer
+# rounds the calculated wall UP to one of these; nobody orders 0.4137".
+STANDARD_WALLS_IN = np.array([
+    0.188, 0.203, 0.219, 0.250, 0.281, 0.312, 0.344, 0.375, 0.406, 0.438,
+    0.469, 0.500, 0.562, 0.625, 0.688, 0.750, 0.812, 0.875, 0.938, 1.000,
+    1.062, 1.125, 1.250, 1.375, 1.500,
+])
+
+# Grade follows diameter in real networks: small gathering and distribution
+# lines are Grade B to X52, large-diameter trunk lines are X60 to X70 because
+# at that size a low grade would need an impractically heavy wall.
+GRADES_BY_SIZE = [
+    # (max diameter in, grades, probabilities)
+    (8,  ["Grade B", "X42", "X52"],        [0.30, 0.35, 0.35]),
+    (16, ["X42", "X52", "X60", "X65"],     [0.20, 0.45, 0.25, 0.10]),
+    (30, ["X52", "X60", "X65", "X70"],     [0.25, 0.35, 0.30, 0.10]),
+    (48, ["X60", "X65", "X70"],            [0.20, 0.40, 0.40]),
+]
+
+# Lines operate below their maximum allowable operating pressure; the wall is
+# designed for the MAOP, not for the pressure on a given day.
+MAOP_OVER_OPERATING = (1.05, 1.25)
+
+# Share of segments built one standard size heavier than the calculation
+# requires: road and river crossings, spec margin, bulk-purchase rounding.
+HEAVY_WALL_SHARE = 0.20
+
+# Handling and construction floor: thinner than this, pipe dents and ovalises
+# in the ditch regardless of pressure. D/t of about 96 is the usual limit.
+MIN_WALL_IN = 0.188
+MAX_D_OVER_T = 96.0
+
+# HDPE is specified by Standard Dimension Ratio, not by Barlow. SDR 11 is the
+# common rating for gas distribution.
+HDPE_SDR = 11.0
+
+# Ultrasonic thickness readings scatter by roughly this much, mm.
+UT_SCATTER_MM = 0.15
+
+# Share of the corrosion allowance a segment's history may consume before we
+# take it as having been repaired. Without this, the worst segments would
+# "measure" below zero wall; real ones leaked and were sleeved or replaced
+# long before, and come back to service near the limit, not past it.
+SURVIVOR_ALLOWANCE_USE = (0.60, 1.06)
+
+
+def design_pipe(diameter, material, product, class_location, operating_pressure):
+    """Grade, nominal wall (mm) and MAOP for each segment, designed the way a
+    pipeline engineer would: Barlow for the MAOP at the location's design
+    factor, then rounded UP to a standard wall, never below the handling floor.
+    """
+    n = len(diameter)
+    grade = np.empty(n, dtype=object)
+    for i, d in enumerate(diameter):
+        for max_d, names, p in GRADES_BY_SIZE:
+            if d <= max_d:
+                grade[i] = DESIGN_RNG.choice(names, p=p)
+                break
+    grade = np.where(material == "HDPE", "", grade)
+
+    maop = operating_pressure * DESIGN_RNG.uniform(*MAOP_OVER_OPERATING, size=n)
+    heavier = DESIGN_RNG.random(n) < HEAVY_WALL_SHARE
+
+    wall_mm = np.empty(n)
+    for i in range(n):
+        d = float(diameter[i])
+        if material[i] == "HDPE":
+            wall_mm[i] = d / HDPE_SDR * 25.4
+            continue
+        smys = SMYS_PSI[grade[i]]
+        f = design_factor(product[i], int(class_location[i]))
+        needed = max(min_required_wall_in(maop[i], d, smys, f), MIN_WALL_IN, d / MAX_D_OVER_T)
+        k = int(np.searchsorted(STANDARD_WALLS_IN, needed - 1e-9))
+        k = min(k + (1 if heavier[i] else 0), len(STANDARD_WALLS_IN) - 1)
+        wall_mm[i] = STANDARD_WALLS_IN[k] * 25.4
+    return grade, wall_mm, maop
+
+
+def measured_wall(nominal_mm, corrosion_rate_mpy, age, material, diameter,
+                  product, class_location, operating_pressure, grade):
+    """Today's wall: nominal minus the metal lost over the pipe's life.
+
+    Loss is consistent with the segment's own corrosion model. The rate grows
+    with sqrt(age), so the metal lost by now is the integral of that curve,
+    about two thirds of (current rate x age). Segments whose history would
+    have consumed more than their corrosion allowance are taken as repaired
+    and returned to service near the limit (see SURVIVOR_ALLOWANCE_USE).
+    """
+    n = len(nominal_mm)
+    loss_mm = (2.0 / 3.0) * corrosion_rate_mpy * age / 1000.0 * 25.4
+    cap_use = DESIGN_RNG.uniform(*SURVIVOR_ALLOWANCE_USE, size=n)
+    scatter = DESIGN_RNG.normal(0.0, UT_SCATTER_MM, size=n)
+
+    out = nominal_mm.copy()
+    for i in range(n):
+        if material[i] == "HDPE":
+            continue                       # no electrochemical wall loss
+        smys = SMYS_PSI[grade[i]]
+        f = design_factor(product[i], int(class_location[i]))
+        t_min_mm = min_required_wall_in(operating_pressure[i], float(diameter[i]), smys, f) * 25.4
+        allowance = max(nominal_mm[i] - t_min_mm, 0.0)
+        out[i] = nominal_mm[i] - min(loss_mm[i], allowance * cap_use[i]) + scatter[i]
+    return np.minimum(out, nominal_mm).clip(0.5, None)
 
 MATERIALS = ["Carbon Steel", "Stainless Steel", "HDPE"]
 COATINGS = ["FBE", "Coal Tar Enamel", "Polyethylene Tape", "Uncoated"]
@@ -63,7 +178,12 @@ MAX_PITTING_RATE_MPY = 40.0
 def generate_pipeline_dataset(n_segments: int = 5000) -> pd.DataFrame:
     age = RNG.gamma(shape=2.0, scale=12, size=n_segments).clip(0, 65)
     diameter = RNG.choice([4, 6, 8, 10, 12, 16, 20, 24, 30, 36, 42, 48], size=n_segments)
-    wall_thickness = RNG.uniform(5, 25, size=n_segments)
+    # NOT the wall. This draw used to be the wall thickness, uniform 5-25 mm
+    # and unrelated to diameter or pressure, which gave 4-inch pipes 18 mm
+    # walls and centuries of remaining life. The wall is now designed (see
+    # design_pipe). The draw stays so that RNG is consumed exactly as before
+    # and every other column, and the label, are unchanged.
+    _legacy_wall_draw = RNG.uniform(5, 25, size=n_segments)  # noqa: F841
     material = RNG.choice(MATERIALS, size=n_segments, p=[0.75, 0.15, 0.10])
     coating = RNG.choice(COATINGS, size=n_segments, p=[0.35, 0.25, 0.25, 0.15])
     cathodic_protection = RNG.choice([True, False], size=n_segments, p=[0.7, 0.3])
@@ -94,10 +214,9 @@ def generate_pipeline_dataset(n_segments: int = 5000) -> pd.DataFrame:
     site_prob = np.where(class_location >= 3, 0.45, np.where(class_location == 2, 0.18, 0.04))
     occupied_site_within_pir = RNG.random(n_segments) < site_prob
 
-    # Grade only means something for steel. HDPE carries no SMYS and the
-    # remaining-life module refuses to run Barlow on it.
-    pipe_grade = RNG.choice(PIPE_GRADES, size=n_segments, p=PIPE_GRADE_P)
-    pipe_grade = np.where(material == "HDPE", "", pipe_grade)
+    # Kept only to consume RNG as before; the grade now follows diameter and
+    # is chosen in design_pipe() on its own stream.
+    _legacy_grade_draw = RNG.choice(PIPE_GRADES, size=n_segments, p=PIPE_GRADE_P)  # noqa: F841
 
     coating_quality = np.array([COATING_QUALITY[c] for c in coating])
     cp_factor = np.where(cathodic_protection, 0.3, 1.0)  # CP cuts corrosion driving force
@@ -164,6 +283,18 @@ def generate_pipeline_dataset(n_segments: int = 5000) -> pd.DataFrame:
     corrosion_rate_mpy[over] = knee + (MAX_PITTING_RATE_MPY - knee) * np.tanh(
         (corrosion_rate_mpy[over] - knee) / (MAX_PITTING_RATE_MPY - knee))
 
+    # --- pipe design and wall history ---------------------------------------
+    # Grade and nominal wall are DESIGNED from diameter, MAOP and the design
+    # factor for the location, as a real line is. The measured wall is that
+    # nominal less the metal this segment's own corrosion has removed.
+    # `measured_wall_mm` is NOT a model feature: it is derived from the
+    # label, so letting the model see it would leak the answer.
+    pipe_grade, wall_thickness, _maop = design_pipe(
+        diameter, material, product, class_location, operating_pressure)
+    wall_measured = measured_wall(
+        wall_thickness, corrosion_rate_mpy, age, material, diameter,
+        product, class_location, operating_pressure, pipe_grade)
+
     # Binary flag for inspection prioritization: top ~15% predicted rate = high priority
     high_priority_threshold = np.quantile(corrosion_rate_mpy, 0.85)
     needs_priority_inspection = (corrosion_rate_mpy >= high_priority_threshold).astype(int)
@@ -173,7 +304,8 @@ def generate_pipeline_dataset(n_segments: int = 5000) -> pd.DataFrame:
             "segment_id": [f"SEG-{i:05d}" for i in range(n_segments)],
             "pipe_age_years": age.round(1),
             "diameter_inches": diameter,
-            "wall_thickness_mm": wall_thickness.round(2),
+            "wall_thickness_mm": wall_thickness.round(2),      # nominal, as built
+            "measured_wall_mm": wall_measured.round(2),        # today, after corrosion
             "material": material,
             "coating_type": coating,
             "cathodic_protection": cathodic_protection,
